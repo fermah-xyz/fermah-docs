@@ -2,31 +2,156 @@
 @import "nextra-theme-docs/style.css";
 
 :root {
-  /* Fermah brand */
-  --fermah-black: #0a0a0a;
-  --fermah-white: #fafafa;
+  /* Fermah brand palette */
+  --fermah-navy: #051624;
+  --fermah-navy-deep: #04131e;
+  --fermah-teal: #06c19d;
+  --fermah-teal-bright: #1ee3cf;
+  --fermah-text: #f7f7f8;
+  --fermah-text-muted: #a2b4c1;
 
-  /* Product accent colors — override per product */
-  --accent-hue: 220;
-  --accent-color: hsl(var(--accent-hue), 70%, 55%);
-  --accent-color-light: hsl(var(--accent-hue), 70%, 75%);
+  /* Nextra theme color — teal accent */
+  --nextra-primary-hue: 164deg;
+  --nextra-primary-saturation: 95%;
+  --nextra-primary-lightness: 39%;
+
+  /* Content width */
+  --nextra-content-width: 90rem;
 }
 
-/* Per-product accent overrides */
+/* Per-product accent color overrides */
 [data-product="network"] {
-  --accent-hue: 220; /* Blue */
+  --nextra-primary-hue: 164deg;
+  --nextra-primary-saturation: 95%;
 }
 
 [data-product="sdk"] {
-  --accent-hue: 265; /* Purple */
+  --nextra-primary-hue: 265deg;
+  --nextra-primary-saturation: 70%;
 }
 
 [data-product="api"] {
-  --accent-hue: 160; /* Teal */
+  --nextra-primary-hue: 200deg;
+  --nextra-primary-saturation: 80%;
 }
 
-/* Nextra theme color override — use product accent */
-:root {
-  --nextra-primary-hue: var(--accent-hue);
-  --nextra-primary-saturation: 70%;
+/* Dark mode background — dark blue-gray that complements the landing navy */
+html.dark,
+.dark {
+  --nextra-bg: 17 24 39 !important;
+}
+
+html.dark body {
+  background-color: rgb(17 24 39) !important;
+}
+
+/* Override Nextra gray backgrounds in dark mode to match our blue-tinted dark */
+html.dark .x\:bg-gray-100 {
+  background-color: rgb(17 24 39) !important;
+}
+
+html.dark .x\:bg-neutral-900 {
+  background-color: rgb(12 19 31) !important;
+}
+
+/* Code block background — softer than default black, matches navy theme */
+.dark pre {
+  --shiki-dark-bg: #0f1b2e !important;
+  background-color: #0f1b2e !important;
+}
+
+pre {
+  --shiki-light-bg: #f8fafc !important;
+}
+
+/* Code block left padding — prevent text overlapping border */
+pre code {
+  padding-left: 1rem !important;
+}
+
+/* Inline code styling — stand out from body text */
+:not(pre) > code {
+  background: rgba(94, 234, 212, 0.08) !important;
+  border: 1px solid rgba(94, 234, 212, 0.15) !important;
+  color: #5eead4 !important;
+  padding: 0.15em 0.4em !important;
+  border-radius: 0.3em !important;
+  font-size: 0.88em !important;
+  font-weight: 500 !important;
+}
+
+:root :not(pre) > code {
+  background: rgba(13, 148, 136, 0.06) !important;
+  border: 1px solid rgba(13, 148, 136, 0.15) !important;
+  color: #0d9488 !important;
+}
+
+/* Hide the last breadcrumb item (current page) and its preceding arrow */
+.nextra-breadcrumb > :last-child,
+.nextra-breadcrumb > :nth-last-child(2) {
+  display: none;
+}
+
+/* Sidebar icon coloring — vivid teal for Iconify duotone icons */
+aside svg.iconify {
+  color: #5eead4 !important;
+}
+
+aside a:hover svg.iconify {
+  color: #06c19d !important;
+}
+
+/* Bold/strong text in docs gets pastel teal color for visual scanning */
+article strong {
+  color: #5eead4; /* pastel teal */
+}
+
+:root article strong {
+  color: #0d9488; /* darker teal for light mode */
+}
+
+.dark article strong {
+  color: #5eead4; /* pastel teal for dark mode */
+}
+
+/* Subtle animated hero gradient for landing page */
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.hero-gradient {
+  background: linear-gradient(
+    160deg,
+    #051624 0%,
+    #071e35 40%,
+    #081f37 60%,
+    #051624 100%
+  );
+  background-size: 200% 200%;
+  animation: gradient-shift 20s ease infinite;
+}
+
+/* Scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--nextra-primary-hue) 30% 30%) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--nextra-primary-hue) 20% 25%);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--nextra-primary-hue) 30% 35%);
 }

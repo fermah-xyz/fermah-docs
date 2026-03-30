@@ -2,6 +2,46 @@
 title: "Telemetry"
 ---
 
+import { Callout } from 'nextra/components'
+
 # Telemetry
 
-Content coming soon.
+Prover Nodes require running a sidecar Docker container to export metrics visible in a public Grafana dashboard.
+
+## API Key
+
+Please reach out through our channels to get your telemetry API key.
+
+## Running Telemetry
+
+During installation, you can opt into telemetry, which launches a Datadog Agent docker container. The prover node then connects to a localhost collector.
+
+## OpenTelemetry
+
+All operators can enable metrics export using the OTL protocol through Datadog Agent with a provided API key. The system currently exports:
+
+- Logs
+- Tracing Spans (Instrumentation)
+- Metrics (e.g. Gauges, Counters)
+
+Operators may customize configurations for additional OpenTelemetry collectors. See [Custom Export](/network/mainnet/for-prover-nodes/telemetry/custom-export) for more details.
+
+## Configuration
+
+The telemetry settings appear in the `~/.fermah/config/prover-node-config.toml` file:
+
+```toml
+[telemetry]
+mode = "Otlp"
+layers = "logs,metrics,traces"
+level = "info"
+filters = []
+interval = 30
+temporality = "Cumulative"
+```
+
+By default, we export all logs that match INFO level.
+
+<Callout type="info">
+More configuration options coming soon.
+</Callout>

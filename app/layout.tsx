@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { ScrollProgress } from './_components/scroll-progress'
 import './global.css'
 
 export const metadata: Metadata = {
@@ -6,7 +7,10 @@ export const metadata: Metadata = {
     default: 'Fermah Documentation',
     template: '%s — Fermah Docs'
   },
-  description: 'Cheap, fast, and reliable proof generation'
+  description: 'Cheap, fast, and reliable proof generation',
+  icons: {
+    icon: '/favicon.jpg'
+  }
 }
 
 export default function RootLayout({
@@ -16,7 +20,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
-      <body>{children}</body>
+      <body>
+        <ScrollProgress />
+        {children}
+      </body>
     </html>
   )
 }

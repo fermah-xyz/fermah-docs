@@ -1,7 +1,127 @@
 ---
 title: "Installation"
+description: "Guide for downloading and using Fermah Prover Node binary."
 ---
+
+import { Callout } from 'nextra/components'
 
 # Installation
 
-Content coming soon.
+{/* TODO: Add installation overview image - image.png */}
+
+<Callout type="info">
+**Recommended**: You can get fully onboarded into Fermah using the script if you opt yes in the onboarding prompt.
+</Callout>
+
+<Callout type="info">
+The installer supports AWS KMS remote signer. Make sure you have configured your instance to access it and have your key name ready before running the install script.
+
+During installation, you need to provide your assigned prover node name, so it fetches the right configuration file.
+</Callout>
+
+## Prepare the server
+
+### Install Privileged Docker
+
+Install Docker with apt (see official [documentation](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository))
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+### Install rootless docker
+
+Install rootless Docker with apt (see official [documentation](https://docs.docker.com/engine/security/rootless/#install)).
+
+```bash
+sudo apt -y install uidmap
+curl -fsSL https://get.docker.com/rootless | sh -s -- --force
+export PATH=$HOME/bin:$PATH
+export DOCKER_HOST=unix:///run/user/<ID>/docker.sock
+```
+
+### Install CUDA drivers
+
+Our binaries are built for **CUDA 12.2** on **Ubuntu 22.04**. Both the CUDA drivers and toolkit are required.
+
+```bash
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+rm cuda-keyring_1.1-1_all.deb
+sudo apt-get install -y cuda-drivers cuda-toolkit-12-2
+```
+
+### Install CUDA containers toolkit for rootless docker
+
+```bash
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update
+export NVIDIA_CONTAINER_TOOLKIT_VERSION=1.17.8-1
+sudo apt-get install -y \
+      nvidia-container-toolkit=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+      nvidia-container-toolkit-base=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+      libnvidia-container-tools=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+      libnvidia-container1=${NVIDIA_CONTAINER_TOOLKIT_VERSION}
+nvidia-ctk runtime configure --runtime=docker --config=$HOME/.config/docker/daemon.json
+systemctl --user restart docker
+sudo nvidia-ctk config --set nvidia-container-cli.no-cgroups --in-place
+```
+
+### Check if the installation works by running a sample CUDA container
+
+```bash
+docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+```
+
+## Install the Fermah Prover Node
+
+We provide an Install Script for obtaining `fpn` (*Fermah Prover Node*) pre-built binaries.
+
+The script is able to:
+
+- Install or update latest release
+- Download the default prover (ZkSync)
+- Install configuration files
+- Setup telemetry collector (requires Docker)
+- Onboard into Fermah Network (requires [Whitelist Keys](/network/mainnet/for-prover-nodes/machine-secret#whitelist-keys))
+
+```bash
+bash <(curl -s https://storage.googleapis.com/fermah-mainnet-releases/install.sh)
+```
+
+Script will run in interactive mode by default. You may pass in `--help` to see what arguments are available.
+
+Then you need to run `fpn` as a daemon. We recommend using `systemd` (see [Starting a Node](/network/mainnet/for-prover-nodes/starting-a-node) for more details).
+
+<Callout type="error">
+We recommend verifying the script first through GPG verification, check [GPG](/network/resources/gpg).
+</Callout>
+
+---
+
+### Supported OS/Arch
+
+| OS | Arch |
+| --- | --- |
+| ubuntu-latest (22.04 LTS) | amd64 |
+
+Please contact us if you need other prebuilt binaries.
+
+<Callout type="info">
+Note that `ubuntu-latest` also applies to most linux distros, as long as the system's GLIBC version is 2.34+ and CUDA version is 12.2.
+</Callout>
+
+<Callout type="warning">
+Release will be installed to `~/.fermah/bin/prover-node-<version>` and soft linked to `prover-node`. If you wish to run the binary using this name, you may add the folder to the `PATH` environment variable using the hint provided by the install script.
+</Callout>

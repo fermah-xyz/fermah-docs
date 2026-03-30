@@ -1,7 +1,8 @@
 import nextra from 'nextra'
 
 const withNextra = nextra({
-  contentDirBasePath: '/'
+  contentDirBasePath: '/',
+  defaultShowCopyCode: true
 })
 
 export default withNextra({

@@ -1,7 +1,46 @@
 ---
 title: "GPG"
+description: "Hosted Fermah GPG signing key for verification of our executed scripts."
 ---
+
+import { Callout } from 'nextra/components'
 
 # GPG
 
-Content coming soon.
+Hosted Fermah GPG signing key for verification of our executed scripts.
+
+{/* File download: fermah-gpg.asc (Public GPG key) - available from GitBook storage */}
+
+## Import Key
+
+Download the key file and run this command:
+
+```bash
+gpg --import fermah-gpg.asc
+```
+
+This will import our key and will be useful for any future verifications.
+
+## Verify
+
+Our Install Script has a `.asc` signature file alongside them. e.g. file `install.sh` will have `install.sh.asc` available.
+
+```bash
+gpg --verify install.sh.asc install.sh
+```
+
+#### Example for Install script
+
+Here's an example for downloading both the signature and the script:
+
+```bash
+wget https://storage.googleapis.com/fermah-releases/install.sh.asc
+wget https://storage.googleapis.com/fermah-releases/install.sh
+gpg --verify install.sh.asc install.sh
+```
+
+<Callout type="error">
+If verification fails, you should not run the script file and contact us immediately.
+</Callout>
+
+A successful verification will display an engineer's email address.

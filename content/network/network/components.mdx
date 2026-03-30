@@ -4,4 +4,17 @@ title: "Components"
 
 # Components
 
-Content coming soon.
+Fermah's network architecture consists of three primary components:
+
+{/* TODO: Add components diagram image */}
+
+1. **Seekers** (blue) - Send Proof Requests to Core through custom dev tooling
+2. **Core** (orange) - Connected to all Prover Nodes via network
+3. **Prover Nodes** (yellow) - Receive task assignments from Core and run the required Prover Binary
+
+The system operates through the following workflow:
+
+- Seekers send Proof Requests to Core through custom dev tooling
+- Core is connected to all Prover Nodes via network
+- Prover Nodes receive task assignments from Core and run the required Prover Binary
+- Completed proofs are stored in a Storage Layer and submitted to the Seeker's callback URL

@@ -2,6 +2,122 @@
 title: "Configuration"
 ---
 
+import { Callout } from 'nextra/components'
+
 # Configuration
 
-Content coming soon.
+Prover Nodes have pre-made configuration files available based on the information provided through the application form.
+
+In order to download these configuration files, you can get them using our Install Script from [installation](/network/mainnet/for-prover-nodes/installation).
+
+<Callout type="info">
+During installation, make sure you provide your assigned prover node name, so it fetches the right configuration file.
+</Callout>
+
+---
+
+## Notes
+
+Running the Install Script sets up a configuration file corresponding to your prover node, containing information about:
+
+- Network endpoints and contracts
+- Keystore
+- Hardware resource claims and prices
+- Prover capabilities
+- Telemetry config
+
+The TOML configuration file is expected to exist in `~/.fermah/config/prover-node-config.toml`.
+
+<Callout type="info">
+For Mainnet, we are currently handling the creation of these configurations from our side for smooth onboarding.
+</Callout>
+
+### Example Configuration
+
+<details>
+<summary>`~/.fermah/config/prover-node-config.toml`</summary>
+
+The following fields should be customized for each prover node:
+
+- All `[hardware]` entries must reflect the server HW resources.
+- Prover fields such as `[zksync]`
+- Key name that was setup during [Machine Secret](/network/mainnet/for-prover-nodes/machine-secret)
+
+```toml
+[prover_node_machine]
+name = "fermah-prover-node-1"
+pn_machine_addr = "35.222.190.25:30089"
+fermah_runtime_addr = "35.222.190.25:30088"
+secret = ""
+
+[keystore]
+key_name = "prover-node"
+
+[contracts.avs]
+fermahServiceManager = "0xEE4eE799e09Ea975139c93Da2E403a8A0Ea8eE6a"
+fermahStakeRegistry = "0x0118abd80cC8895Cbd40f5912e8E36c863CC61c1"
+
+[contracts.el]
+avsDirectory = "0xa789c91ECDdae96865913130B786140Ee17aF545"
+
+[contracts.fermah]
+fermahHub = "0x39c45acF981B2351AfC4aF3A20b1580028909096"
+vault = "0x4C891A7090CC54a6e6E1bb808640eB1603919466"
+whitelist = "0x1DE8df315db89bF435A278cbA3518f26974d5e1c"
+
+[telemetry]
+mode = { Alloy = {} }
+layers = "logs,metrics,traces"
+filter = "info"
+interval = 30
+temporality = { Cumulative = {} }
+
+[telemetry.export]
+endpoint = "http://localhost:4317/"
+timeout = "3s"
+
+[storage]
+port = 3333
+
+[hardware.ram]
+price = "0x3e8"
+
+[hardware.ram.resource]
+size = 17179869184
+type = "DDR5"
+
+[hardware.ssd]
+price = "0x3e8"
+
+[hardware.ssd.resource]
+size = 137438953472
+type = "NVMeGen3"
+
+[[hardware.gpus]]
+price = "0x3e8"
+
+[[hardware.gpus.resource.specs]]
+
+[hardware.gpus.resource.specs.CUDA_CC]
+major = 26
+minor = 7
+
+[hardware.cpu]
+price = "0x3e8"
+
+[hardware.cpu.resource]
+model = "ryzen7"
+
+[zksync]
+storage_bucket = "fermah-mainnet"
+root_path = "/home/fermah/.fermah/zksync"
+mode = { CP = { num_workers = 16, max_gpu_vram_allocation = 1024 } }
+```
+
+</details>
+
+### Reference
+
+<Callout type="warning">
+Coming soon
+</Callout>

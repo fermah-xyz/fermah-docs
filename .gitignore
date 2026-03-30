@@ -28,3 +28,7 @@ yarn-error.log*
 
 # Pagefind
 _pagefind/
+
+# Reference files
+Fermah Docs.html
+Fermah Docs_files/

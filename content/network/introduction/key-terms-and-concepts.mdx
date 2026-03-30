@@ -4,4 +4,26 @@ title: "Key Terms and Concepts"
 
 # Key Terms and Concepts
 
-Content coming soon.
+Fermah's network consists of the following types of nodes.
+
+- **Seekers:** the whitelisted users of Fermah that can submit Proof Requests.
+- **Prover Nodes:** the nodes that generate proofs for the Proof Requests assigned to them. They run the Prover algorithm of the proof system corresponding to the given proof request. In Testnet, Prover Nodes only consist of EigenLayer Operators. The Operators currently run GPUs and CPUs. Future phases will involve expanding Prover Nodes to include machines such as FPGAs and VPUs.
+- **Matchmaker:** the orchestrator that receives proof requests from Seekers and assigns them to capable Prover Nodes.
+
+Below are terms and concepts pertaining to zero-knowledge proofs.
+
+- A proof system is a triple consisting of Setup Parameters, Prover, and Verifier.
+  - **Setup Parameters:** a reference string used by Prover and Verifier algorithms, typically generated through a setup ceremony.
+  - **Prover:** an algorithm that generates a proof that a given computation is performed correctly. The Prover takes as input the setup parameters, as well as the computation itself.
+  - **Verifier:** an algorithm that verifies a proof. Besides Setup parameters and the proof to be verified, the Verifier takes a short representation of the computation as the input, called a verifying key.
+- **zkVM:** a proof system in which the Prover algorithm is generic across a large class of computations. This is in contrast with computation-specific proof systems, where the Prover algorithm is for a specific computation and the Prover algorithm only takes the inputs/outputs of that computation.
+- **zkEVM:** a virtual machine that generates proofs of correct execution of Ethereum smart contracts.
+
+Below are terms and concepts pertaining to ZKPs in the context of Fermah network.
+
+- **Prover/Verifier images:** a Docker image that contains the executable for running a Prover/Verifier respectively.
+
+Below are terms pertaining to the cryptoeconomic security methodology that Fermah will employ to incentivize Prover Nodes to fulfill their assigned proof requests.
+
+- **Restaking and AVSs:** Restaking allows validators on blockchains like Ethereum and Solana to redeploy their staked cryptocurrency across other services, called Actively Validated Services (AVSs).
+- **EigenLayer:** EigenLayer creates a marketplace that connects restakers with AVSs.

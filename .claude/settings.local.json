@@ -6,7 +6,17 @@
       "WebFetch(domain:docs.fermah.xyz)",
       "WebFetch(domain:github.com)",
       "Bash(bun add:*)",
-      "Bash(bun run:*)"
+      "Bash(bun run:*)",
+      "WebFetch(domain:fermah.xyz)",
+      "WebFetch(domain:fermahxyz-dev.fermah.workers.dev)",
+      "Read(//Users/pavi/.claude/plugins/marketplaces/playwright-skill/skills/playwright-skill/**)",
+      "Bash(node run.js /tmp/playwright-test-fermah-fixes.js)",
+      "Bash(bunx next:*)",
+      "Bash(bunx eslint:*)",
+      "Bash(bunx tsc:*)",
+      "Bash(node run.js /tmp/playwright-test-final-v2.js)",
+      "Bash(node run.js /tmp/playwright-test-heading-icons.js)",
+      "Bash(node run.js /tmp/playwright-test-simple.js)"
     ]
   }
 }

@@ -2,6 +2,29 @@
 title: "Registration"
 ---
 
+import { Callout } from 'nextra/components'
+
 # Registration
 
-Content coming soon.
+This is a one-time registration using the `fpn` binary. It registers Fermah as an AVS for your Prover Node through the Registry Coordinator.
+
+Before registering, make sure:
+
+- You have completed the [machine-secret](/network/mainnet/for-prover-nodes/machine-secret) process and obtained whitelist approval
+- You have a Mainnet Ethereum Node RPC URL access with your API key (e.g. Alchemy, Infura or private)
+- You have set up your [configuration](/network/mainnet/for-prover-nodes/configuration) files
+
+Substitute the RPC URL with your own and run:
+
+```bash
+RPC=https://mainnet.infura.io/v3/$API_KEY
+prover-node register -r $RPC
+```
+
+<Callout type="info">
+If you are already registered in EigenLayer and wish to participate as an EigenLayer operator, add the `--el` flag to the registration command. Make sure you are using the same private key as your operator identity.
+</Callout>
+
+<Callout type="warning">
+If you change your machine or lose your key, registration needs to be executed again.
+</Callout>

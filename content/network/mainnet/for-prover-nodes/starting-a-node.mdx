@@ -2,6 +2,127 @@
 title: "Starting a Node"
 ---
 
+import { Callout } from 'nextra/components'
+
 # Starting a Node
 
-Content coming soon.
+<Callout type="warning">
+Please make sure you are running telemetry
+</Callout>
+
+## Machine Limits
+
+We need to modify the maximum open files and unix socket buffers to increase their limits.
+
+### Open Files
+
+```bash
+sudo echo "fermah	soft	nofile	65535" >> /etc/security/limits.conf
+sudo echo "fermah	hard	nofile	65535" >> /etc/security/limits.conf
+```
+
+### Unix Socket Buffers
+
+```bash
+sudo sysctl -w net.core.wmem_max=16777216
+sudo sysctl -w net.core.rmem_max=16777216
+```
+
+## Start
+
+<Callout type="info">
+Make sure the configuration file exists at `~/.fermah/config/prover-node-config.toml`
+</Callout>
+
+```bash
+fpn
+```
+
+This launches the prover-node binary. It connects you to our network using the provided key and waits for Proof Requests. The process also checks for background updates.
+
+## Daemonization
+
+### Systemd
+
+#### Service File
+
+Create the service file at `/etc/systemd/system/fermah.service`:
+
+```systemd
+[Unit]
+Description=Fermah Prover Node
+After=network.target local-fs.target
+
+[Service]
+Type=simple
+User=%u
+Group=%g
+ExecStart=/home/%u/.fermah/bin/fpn
+ExecStop=/bin/kill -s TERM $MAINPID
+Restart=on-failure
+KillMode=control-group
+ExecStartPost=/bin/sleep 0.5
+TimeoutStopSec=20
+StartLimitBurst=5
+RestartSec=5
+StandardOutput=append:/var/log/fermah/pn.log
+Environment=DOCKER_HOST=unix:///run/user/1001/docker.sock
+
+ExecStartPre=/bin/mkdir -p /var/log/fermah
+ExecStartPre=/bin/chown %u:%g /var/log/fermah
+ExecStartPre=/bin/chmod 755 /var/log/fermah
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+#### Logrotate
+
+1. Create the file `/etc/logrotate.d/fermah`
+2. Set permissions `sudo chmod 644 /etc/logrotate.d/fermah`
+
+```ini
+/var/log/fermah/pn.log {
+    su root adm
+    daily
+    missingok
+    rotate 30
+    maxsize 1G
+    compress
+    notifempty
+    postrotate
+        /usr/lib/rsyslog/rsyslog-rotate
+    endscript
+}
+```
+
+#### Enable service
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable fermah.service
+sudo systemctl start fermah.service
+```
+
+### Docker
+
+<Callout type="error">
+Docker setup is under development.
+</Callout>
+
+### Kubernetes
+
+<Callout type="error">
+Kubernetes helm chart is under development.
+</Callout>
+
+## Headless Password
+
+If you are using a password for your machine keystore file, you can start the process headless with no prompts, by using the env var `FERMAH_KEYSTORE_PW_FILE` and setting it to the absolute path to the file containing the password.
+
+Keep in mind these security considerations:
+
+- Set password file permissions to `600`
+- Ensure the keystore file has `600` permissions.
+- Run the systemd service with a non root user and owning both keystore file and password file

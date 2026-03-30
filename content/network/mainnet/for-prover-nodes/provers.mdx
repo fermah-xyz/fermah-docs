@@ -2,6 +2,95 @@
 title: "Provers"
 ---
 
+import { Callout } from 'nextra/components'
+
 # Provers
 
-Content coming soon.
+Prover Nodes need local access to installed binaries corresponding to proof systems supported. These binaries are installed to `~/.fermah/[prover]/bin`.
+
+Provers can have their configuration customized through the Prover Node configuration, see [configuration](/network/mainnet/for-prover-nodes/configuration).
+
+<Callout type="warning">
+Currently, only ZkSync binaries are being distributed.
+</Callout>
+
+## ZkSync
+
+After the release installation, this prover is available under `~/.fermah/zksync`.
+
+There are three folders to note:
+
+- `bin` contains the executables
+- `etc` contains necessary keys for proving and verification
+- `var` contains application-specific files, such as the unix socket and logs.
+
+### Configuration
+
+This is the top level config regardless of the mode running.
+Please check that `root_path` points to the right user.
+
+```toml
+[zksync]
+storage_bucket = "fermah-mainnet"
+root_path = "/home/fermah/.fermah/zksync"
+```
+
+<Callout type="info">
+Storage configuration will change in the future.
+</Callout>
+
+#### Modes
+
+Currently, this prover can be ran in two modes:
+
+##### Witness Generator and Compressor (WGC)
+
+###### Configuration
+
+```toml
+[[zksync.mode.WGC]]
+round = ["all"]
+```
+
+Minimum requirements for a ZkSync CPU **witness generator**.
+
+| Round | RAM | vCPUs |
+| --- | --- | --- |
+| all | 128 GB | 32 |
+| basic\_circuits | 32 GB | 16 |
+| leaf\_aggregation | 80 GB | 16 |
+| node\_aggregation | 4 GB | 8 |
+| recursion\_tip | 1 GB | 4 |
+| scheduler | 1 GB | 4 |
+
+Suggested Cloud Instance Types:
+- **AWS** `g6.8xlarge`
+- **GCP** `g2-standard-32`
+
+<Callout type="warning">
+This mode also runs the proof compressor, which needs a GPU with at least 24GB of memory.
+</Callout>
+
+##### Circuit Prover (CP)
+
+###### Configuration
+
+```toml
+[zksync.mode.CP]
+num_workers = 16
+max_gpu_vram_allocation = 1024
+```
+
+Minimum requirements for a ZkSync **circuit prover.**
+
+| vCPUs | RAM | VRAM | Storage |
+| --- | --- | --- | --- |
+| 32 | 128 GB | 24 GB | 375 GB SSD |
+
+Suggested Cloud Instance Types:
+- **AWS** `g6.8xlarge`
+- **GCP** `g2-standard-32`
+
+<Callout type="info">
+This prover is automatically installed with our latest release.
+</Callout>

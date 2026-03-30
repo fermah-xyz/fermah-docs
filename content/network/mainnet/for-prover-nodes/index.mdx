@@ -2,6 +2,85 @@
 title: "For Prover Nodes"
 ---
 
+import { Callout } from 'nextra/components'
+
 # For Prover Nodes
 
-Content coming soon.
+<Callout type="info">
+**Recommended**: Follow the quickstart guide [Installation](/network/mainnet/for-prover-nodes/installation) and go through the onboarding using the script.
+</Callout>
+
+For complete manual onboarding, you may follow these steps to get started:
+
+### 1. Installation
+
+Download one of our releases and get your environment setup.
+
+### 2. Configuration
+
+Customize your installation based on your hardware and provers.
+
+### 3. Machine Secret
+
+Setup proper authentication for your prover node and get whitelisted.
+
+### 4. Registration
+
+Register your Prover Node with Fermah Core.
+
+### 5. Telemetry
+
+Prepare your node for proving metrics collection.
+
+### 6. Starting a Node
+
+Launch the Prover Node.
+
+These steps will get a Prover Node fully onboarded into Fermah Mainnet.
+
+---
+
+### Prerequisites
+
+**Registered Prover Node Accounts:** Ensure you have a fully registered Prover Node account, such as with EigenLayer. If you don't have one, follow the steps in the [EigenLayer Operator Guide](https://docs.eigenlayer.xyz/operators/howto/operator-installation) to create and fund your account.
+
+You will also need the following:
+
+- Ubuntu 22.04 LTS (GLIBC 2.34+)
+- Privileged Docker v24+ (telemetry)
+- Rootless Docker v24+ (provers)
+- CUDA drivers v12.2 (see NVIDIA [docs](https://developer.nvidia.com/cuda-12-2-0-download-archive?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=22.04&target_type=deb_network))
+- CUDA containers toolkit for rootless docker (see NVIDIA [docs](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html))
+- Mainnet Ethereum Node RPC URL access with your API key (e.g. Alchemy, Infura or private)
+- Datadog API key (provided by Fermah)
+
+### Hardware Requirements
+
+Resources used by the Operator will vary greatly depending on the prover image that is running.
+
+#### ZkSync
+
+Minimum requirements for a ZkSync CPU **witness generator**.
+
+| Round | RAM | vCPUs |
+| --- | --- | --- |
+| all | 128 GB | 32 |
+| basic\_circuits | 32 GB | 16 |
+| leaf\_aggregation | 80 GB | 16 |
+| node\_aggregation | 4 GB | 8 |
+| recursion\_tip | 1 GB | 4 |
+| scheduler | 1 GB | 4 |
+
+Suggested Cloud Instance Types:
+- **AWS** `g6.8xlarge`
+- **GCP** `g2-standard-32`
+
+Minimum requirements for a ZkSync **circuit prover.**
+
+| vCPUs | RAM | VRAM | Storage |
+| --- | --- | --- | --- |
+| 32 | 128 GB | 24 GB | 375 GB SSD |
+
+Suggested Cloud Instance Types:
+- **AWS** `g6.8xlarge`
+- **GCP** `g2-standard-32`
