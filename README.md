@@ -9,8 +9,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/fermah-xyz/fermah-docs/actions/workflows/deploy-prod.yml"><img src="https://github.com/fermah-xyz/fermah-docs/actions/workflows/deploy-prod.yml/badge.svg" alt="Deploy to Production" /></a>
-  <a href="https://github.com/fermah-xyz/fermah-docs/actions/workflows/deploy-dev.yml"><img src="https://github.com/fermah-xyz/fermah-docs/actions/workflows/deploy-dev.yml/badge.svg" alt="Deploy to Dev" /></a>
   <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/Nextra-4-blue" alt="Nextra 4" />
   <img src="https://img.shields.io/badge/bun-latest-f472b6?logo=bun" alt="Bun" />

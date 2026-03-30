@@ -54,6 +54,18 @@ html.dark .x\:bg-neutral-900 {
   background-color: rgb(12 19 31) !important;
 }
 
+/* Mobile sidebar/menu overlay — solid dark background, not transparent */
+html.dark .nextra-sidebar-container,
+html.dark aside {
+  background-color: rgb(17 24 39) !important;
+}
+
+/* Navbar blur — ensure it's not fully transparent on mobile */
+html.dark .nextra-navbar-blur {
+  background-color: rgba(17, 24, 39, 0.85) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
 /* Code block background — softer than default black, matches navy theme */
 .dark pre {
   --shiki-dark-bg: #0f1b2e !important;

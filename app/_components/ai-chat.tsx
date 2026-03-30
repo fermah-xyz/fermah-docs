@@ -15,9 +15,9 @@ export function AiChat() {
         style={{
           position: 'fixed',
           bottom: '1.5rem',
-          right: '1.5rem',
-          width: '48px',
-          height: '48px',
+          right: '1rem',
+          width: '44px',
+          height: '44px',
           borderRadius: '50%',
           background: 'linear-gradient(135deg, #06c19d, #0d9488)',
           border: 'none',
