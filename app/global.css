@@ -114,22 +114,21 @@ article strong {
   color: #5eead4; /* pastel teal for dark mode */
 }
 
-/* Subtle animated hero gradient for landing page */
+/* Animated hero gradient for landing page */
 @keyframes gradient-shift {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 100%; }
+  100% { background-position: 0% 0%; }
 }
 
 .hero-gradient {
-  background: linear-gradient(
-    160deg,
-    #051624 0%,
-    #071e35 40%,
-    #081f37 60%,
-    #051624 100%
-  );
-  background-size: 200% 200%;
-  animation: gradient-shift 20s ease infinite;
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(6, 193, 157, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(30, 227, 207, 0.06) 0%, transparent 40%),
+    radial-gradient(ellipse at 60% 80%, rgba(6, 193, 157, 0.05) 0%, transparent 45%),
+    linear-gradient(160deg, #051624 0%, #0a2540 50%, #051624 100%);
+  background-size: 200% 200%, 200% 200%, 200% 200%, 100% 100%;
+  animation: gradient-shift 12s ease infinite;
 }
 
 /* Scrollbar styling */

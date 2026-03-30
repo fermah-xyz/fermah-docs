@@ -16,7 +16,9 @@
       "Bash(bunx tsc:*)",
       "Bash(node run.js /tmp/playwright-test-final-v2.js)",
       "Bash(node run.js /tmp/playwright-test-heading-icons.js)",
-      "Bash(node run.js /tmp/playwright-test-simple.js)"
+      "Bash(node run.js /tmp/playwright-test-simple.js)",
+      "Bash(node run.js /tmp/playwright-test-v4.js)",
+      "Bash(wrangler whoami:*)"
     ]
   }
 }

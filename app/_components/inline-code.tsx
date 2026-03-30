@@ -1,55 +1,70 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { Icon } from '@iconify/react'
 
 export function InlineCode({ children, className, ...props }: React.ComponentProps<'code'>) {
   const [copied, setCopied] = useState(false)
+  const [hovered, setHovered] = useState(false)
   const ref = useRef<HTMLElement>(null)
 
   // Code blocks from Shiki have a className like "language-xxx" — skip those
   const isCodeBlock = className && /language-/.test(className)
 
-  if (isCodeBlock) {
-    return <code className={className} {...props}>{children}</code>
-  }
-
-  const handleCopy = () => {
+  const handleCopy = useCallback(() => {
     const text = ref.current?.textContent || ''
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     })
+  }, [])
+
+  if (isCodeBlock) {
+    return <code className={className} {...props}>{children}</code>
   }
 
   return (
     <code
       ref={ref}
-      className={`group/code ${className || ''}`}
-      style={{ position: 'relative', ...props.style }}
+      className={className}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: 'relative',
+        display: 'inline-flex',
+        alignItems: 'center',
+        cursor: 'pointer',
+        ...props.style,
+      }}
+      onClick={handleCopy}
       {...props}
     >
-      {children}
-      <button
-        onClick={handleCopy}
-        aria-label="Copy"
-        className="opacity-0 group-hover/code:opacity-100"
-        style={{
-          position: 'absolute',
-          top: '50%',
-          right: '-18px',
-          transform: 'translateY(-50%)',
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          padding: '1px',
-          color: copied ? '#06c19d' : '#a2b4c1',
-          transition: 'opacity 150ms',
-          lineHeight: 1,
-        }}
-      >
-        <Icon icon={copied ? 'ph:check-bold' : 'ph:copy-duotone'} width={12} />
-      </button>
+      {/* Hover overlay */}
+      {hovered && (
+        <span
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.15)',
+            borderRadius: 'inherit',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      <span style={{ position: 'relative' }}>{children}</span>
+      {hovered && (
+        <span
+          style={{
+            position: 'relative',
+            marginLeft: '0.3em',
+            flexShrink: 0,
+            color: copied ? '#06c19d' : '#a2b4c1',
+            lineHeight: 1,
+          }}
+        >
+          <Icon icon={copied ? 'ph:check-bold' : 'ph:copy-duotone'} width={12} />
+        </span>
+      )}
     </code>
   )
 }
