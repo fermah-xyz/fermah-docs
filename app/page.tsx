@@ -237,36 +237,6 @@ export default function LandingPage() {
           ))}
         </div>
 
-        {/* Global quick links (not product-specific) */}
-        <div className="mt-16 flex flex-wrap items-center justify-center gap-6 text-sm text-[#a2b4c1]">
-          <a
-            href="https://fermah.xyz"
-            className="flex items-center gap-1.5 transition hover:text-white"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Icon icon="ph:globe-duotone" width={16} />
-            Website
-          </a>
-          <a
-            href="https://discord.gg/zzJDPWppRU"
-            className="flex items-center gap-1.5 transition hover:text-white"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Icon icon="ph:discord-logo-duotone" width={16} />
-            Discord
-          </a>
-          <a
-            href="https://github.com/fermah-xyz"
-            className="flex items-center gap-1.5 transition hover:text-white"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Icon icon="ph:github-logo-duotone" width={16} />
-            GitHub
-          </a>
-        </div>
       </main>
 
       {/* Footer */}
