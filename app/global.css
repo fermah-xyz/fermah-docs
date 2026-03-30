@@ -1,0 +1,32 @@
+@import "tailwindcss";
+@import "nextra-theme-docs/style.css";
+
+:root {
+  /* Fermah brand */
+  --fermah-black: #0a0a0a;
+  --fermah-white: #fafafa;
+
+  /* Product accent colors — override per product */
+  --accent-hue: 220;
+  --accent-color: hsl(var(--accent-hue), 70%, 55%);
+  --accent-color-light: hsl(var(--accent-hue), 70%, 75%);
+}
+
+/* Per-product accent overrides */
+[data-product="network"] {
+  --accent-hue: 220; /* Blue */
+}
+
+[data-product="sdk"] {
+  --accent-hue: 265; /* Purple */
+}
+
+[data-product="api"] {
+  --accent-hue: 160; /* Teal */
+}
+
+/* Nextra theme color override — use product accent */
+:root {
+  --nextra-primary-hue: var(--accent-hue);
+  --nextra-primary-saturation: 70%;
+}

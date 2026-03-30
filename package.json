@@ -1,0 +1,28 @@
+{
+  "name": "fermah-docs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "postbuild": "pagefind --site out --output-path out/_pagefind",
+    "preview": "bunx serve out",
+    "deploy:dev": "wrangler pages deploy out --project-name fermah-docs-dev",
+    "deploy:prod": "wrangler pages deploy out --project-name fermah-docs"
+  },
+  "dependencies": {
+    "next": "^16.2.1",
+    "nextra": "^4.6.1",
+    "nextra-theme-docs": "^4.6.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "pagefind": "^1.4.0",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "wrangler": "^4.78.0"
+  }
+}
