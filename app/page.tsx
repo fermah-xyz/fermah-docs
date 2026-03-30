@@ -83,8 +83,8 @@ export default function LandingPage() {
             <span className="text-sm text-[#a2b4c1]">Docs</span>
           </div>
           <nav className="flex items-center gap-4">
-            <a href="https://fermah.xyz" className="text-sm text-[#a2b4c1] transition hover:text-white" target="_blank" rel="noopener noreferrer">
-              Website
+            <a href="https://fermah.xyz" title="Website" className="text-[#a2b4c1] transition hover:text-white" target="_blank" rel="noopener noreferrer">
+              <Icon icon="ph:globe-duotone" width={22} />
             </a>
             {socialLinks.map((link) => (
               <a

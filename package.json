@@ -7,8 +7,8 @@
     "build": "next build",
     "postbuild": "pagefind --site out --output-path out/_pagefind",
     "preview": "bunx serve out",
-    "deploy:dev": "wrangler pages deploy --env dev",
-    "deploy:prod": "wrangler pages deploy --env production",
+    "deploy:dev": "wrangler deploy --env dev",
+    "deploy:prod": "wrangler deploy --env production",
     "lint": "next lint ."
   },
   "dependencies": {

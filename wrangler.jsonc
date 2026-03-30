@@ -2,7 +2,9 @@
     "$schema": "./node_modules/wrangler/config-schema.json",
     "name": "fermah-docs",
     "compatibility_date": "2026-03-30",
-    "pages_build_output_dir": "out",
+    "assets": {
+        "directory": "out"
+    },
 
     "env": {
         "dev": {
