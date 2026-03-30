@@ -1,22 +1,22 @@
-import type { Metadata } from 'next'
-import { ScrollProgress } from './_components/scroll-progress'
-import './global.css'
+import type { Metadata } from "next";
+import { ScrollProgress } from "./_components/scroll-progress";
+import "./global.css";
 
 export const metadata: Metadata = {
   title: {
-    default: 'Fermah Documentation',
-    template: '%s — Fermah Docs'
+    default: "Fermah Documentation",
+    template: "%s — Fermah Docs",
   },
-  description: 'Cheap, fast, and reliable proof generation',
+  description: "Programmable Execution layer",
   icons: {
-    icon: '/favicon.jpg'
-  }
-}
+    icon: "/favicon.jpg",
+  },
+};
 
 export default function RootLayout({
-  children
+  children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
@@ -25,5 +25,5 @@ export default function RootLayout({
         {children}
       </body>
     </html>
-  )
+  );
 }

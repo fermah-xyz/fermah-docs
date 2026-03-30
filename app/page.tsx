@@ -1,75 +1,94 @@
-import Link from 'next/link'
-import Image from 'next/image'
-import { Icon } from '@iconify/react'
+import Link from "next/link";
+import Image from "next/image";
+import { Icon } from "@iconify/react";
 
 type ProductLink = {
-  label: string
-  href: string
-  comingSoon?: boolean
-}
+  label: string;
+  href: string;
+  comingSoon?: boolean;
+};
 
 type ResourceLink = {
-  icon: string
-  label: string
-  href: string
-}
+  icon: string;
+  label: string;
+  href: string;
+};
 
 type ProductGroup = {
-  name: string
-  description: string
-  icon: string
-  accentColor: string
-  statusUrl: string
-  links: ProductLink[]
-  resources: ResourceLink[]
-}
+  name: string;
+  description: string;
+  icon: string;
+  accentColor: string;
+  statusUrl: string;
+  links: ProductLink[];
+  resources: ResourceLink[];
+};
 
 const productGroups: ProductGroup[] = [
   {
-    name: 'ZK Proof Market',
-    description: 'The universal proof market for cheap, fast, and reliable zero-knowledge proof generation.',
-    icon: 'ph:shield-check-duotone',
-    accentColor: '#06c19d',
-    statusUrl: 'https://status.fermah.xyz/badge?theme=dark',
+    name: "ZK Proof Market",
+    description:
+      "The universal proof market for cheap, fast, and reliable zero-knowledge proof generation.",
+    icon: "ph:shield-check-duotone",
+    accentColor: "#06c19d",
+    statusUrl: "https://status.fermah.xyz/badge?theme=dark",
     links: [
-      { label: 'Documentation', href: '/network' },
-      { label: 'API Reference', href: '/api', comingSoon: true }
+      { label: "Documentation", href: "/network" },
+      { label: "API Reference", href: "/api", comingSoon: true },
     ],
     resources: [
-      { icon: 'ph:compass-duotone', label: 'Proof Explorer', href: 'https://explorer.fermah.xyz/' },
-    ]
+      {
+        icon: "ph:compass-duotone",
+        label: "Proof Explorer",
+        href: "https://explorer.fermah.xyz/",
+      },
+    ],
   },
   {
-    name: 'Flashcast Social',
-    description: 'Decentralized social protocol powered by zero-knowledge proofs.',
-    icon: 'ph:lightning-duotone',
-    accentColor: '#a855f7',
-    statusUrl: 'https://status.flashcast.social/badge?theme=dark',
+    name: "Flashcast Social",
+    description:
+      "Decentralized social protocol powered by zero-knowledge proofs.",
+    icon: "ph:lightning-duotone",
+    accentColor: "#a855f7",
+    statusUrl: "https://status.flashcast.social/badge?theme=dark",
     links: [
-      { label: 'Documentation', href: '/flashcast', comingSoon: true },
-      { label: 'API Reference', href: '/flashcast/api', comingSoon: true }
+      { label: "Documentation", href: "/flashcast", comingSoon: true },
+      { label: "API Reference", href: "/flashcast/api", comingSoon: true },
     ],
-    resources: []
+    resources: [],
   },
   {
-    name: 'Marina',
-    description: 'Privacy-preserving data infrastructure for the decentralized web.',
-    icon: 'ph:anchor-duotone',
-    accentColor: '#3b82f6',
-    statusUrl: '',
+    name: "Marina",
+    description:
+      "Privacy-preserving data infrastructure for the decentralized web.",
+    icon: "ph:anchor-duotone",
+    accentColor: "#3b82f6",
+    statusUrl: "",
     links: [
-      { label: 'Documentation', href: '/marina', comingSoon: true },
-      { label: 'API Reference', href: '/marina/api', comingSoon: true }
+      { label: "Documentation", href: "/marina", comingSoon: true },
+      { label: "API Reference", href: "/marina/api", comingSoon: true },
     ],
-    resources: []
-  }
-]
+    resources: [],
+  },
+];
 
 const socialLinks = [
-  { icon: 'ph:github-logo-duotone', href: 'https://github.com/fermah-xyz', label: 'GitHub' },
-  { icon: 'ph:x-logo-duotone', href: 'https://x.com/fermaborachain', label: 'X' },
-  { icon: 'ph:discord-logo-duotone', href: 'https://discord.gg/zzJDPWppRU', label: 'Discord' },
-]
+  {
+    icon: "ph:github-logo-duotone",
+    href: "https://github.com/fermah-xyz",
+    label: "GitHub",
+  },
+  {
+    icon: "ph:x-logo-duotone",
+    href: "https://x.com/fermaborachain",
+    label: "X",
+  },
+  {
+    icon: "ph:discord-logo-duotone",
+    href: "https://discord.gg/zzJDPWppRU",
+    label: "Discord",
+  },
+];
 
 export default function LandingPage() {
   return (
@@ -83,7 +102,13 @@ export default function LandingPage() {
             <span className="text-sm text-[#a2b4c1]">Docs</span>
           </div>
           <nav className="flex items-center gap-4">
-            <a href="https://fermah.xyz" title="Website" className="text-[#a2b4c1] transition hover:text-white" target="_blank" rel="noopener noreferrer">
+            <a
+              href="https://fermah.xyz"
+              title="Website"
+              className="text-[#a2b4c1] transition hover:text-white"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <Icon icon="ph:globe-duotone" width={22} />
             </a>
             {socialLinks.map((link) => (
@@ -109,8 +134,7 @@ export default function LandingPage() {
             Fermah Documentation
           </h1>
           <p className="mx-auto max-w-2xl text-lg text-[#a2b4c1]">
-            Cheap, fast, and reliable proof generation.
-            Choose a product to get started.
+            Programmable Execution layer. Choose a product to get started.
           </p>
         </div>
 
@@ -127,7 +151,11 @@ export default function LandingPage() {
                   className="flex h-10 w-10 items-center justify-center rounded-lg"
                   style={{ backgroundColor: `${group.accentColor}15` }}
                 >
-                  <Icon icon={group.icon} width={24} style={{ color: group.accentColor }} />
+                  <Icon
+                    icon={group.icon}
+                    width={24}
+                    style={{ color: group.accentColor }}
+                  />
                 </div>
                 <h2 className="text-xl font-semibold">{group.name}</h2>
               </div>
@@ -144,7 +172,7 @@ export default function LandingPage() {
                     src={group.statusUrl}
                     width={250}
                     height={30}
-                    style={{ border: 0, colorScheme: 'normal' }}
+                    style={{ border: 0, colorScheme: "normal" }}
                     title={`${group.name} Status`}
                   />
                 ) : (
@@ -172,7 +200,11 @@ export default function LandingPage() {
                       href={link.href}
                       className="group flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm transition-all hover:border-[#06c19d]/40 hover:bg-[#06c19d]/5"
                     >
-                      <Icon icon="ph:book-open-duotone" width={16} className="text-[#06c19d]" />
+                      <Icon
+                        icon="ph:book-open-duotone"
+                        width={16}
+                        className="text-[#06c19d]"
+                      />
                       {link.label}
                       <Icon
                         icon="ph:arrow-right"
@@ -180,7 +212,7 @@ export default function LandingPage() {
                         className="ml-auto text-[#06c19d] opacity-0 transition group-hover:opacity-100"
                       />
                     </Link>
-                  )
+                  ),
                 )}
               </div>
 
@@ -207,15 +239,30 @@ export default function LandingPage() {
 
         {/* Global quick links (not product-specific) */}
         <div className="mt-16 flex flex-wrap items-center justify-center gap-6 text-sm text-[#a2b4c1]">
-          <a href="https://fermah.xyz" className="flex items-center gap-1.5 transition hover:text-white" target="_blank" rel="noopener noreferrer">
+          <a
+            href="https://fermah.xyz"
+            className="flex items-center gap-1.5 transition hover:text-white"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <Icon icon="ph:globe-duotone" width={16} />
             Website
           </a>
-          <a href="https://discord.gg/zzJDPWppRU" className="flex items-center gap-1.5 transition hover:text-white" target="_blank" rel="noopener noreferrer">
+          <a
+            href="https://discord.gg/zzJDPWppRU"
+            className="flex items-center gap-1.5 transition hover:text-white"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <Icon icon="ph:discord-logo-duotone" width={16} />
             Discord
           </a>
-          <a href="https://github.com/fermah-xyz" className="flex items-center gap-1.5 transition hover:text-white" target="_blank" rel="noopener noreferrer">
+          <a
+            href="https://github.com/fermah-xyz"
+            className="flex items-center gap-1.5 transition hover:text-white"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <Icon icon="ph:github-logo-duotone" width={16} />
             GitHub
           </a>
@@ -245,5 +292,5 @@ export default function LandingPage() {
         </div>
       </footer>
     </div>
-  )
+  );
 }

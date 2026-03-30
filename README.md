@@ -5,7 +5,7 @@
 <h1 align="center">Fermah Documentation</h1>
 
 <p align="center">
-  The official documentation site for Fermah — cheap, fast, and reliable proof generation.
+  The official documentation site for Fermah — Programmable Execution layer.
 </p>
 
 <p align="center">
