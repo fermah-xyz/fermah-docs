@@ -11,6 +11,19 @@ export const metadata: Metadata = {
   icons: {
     icon: "/favicon.jpg",
   },
+  openGraph: {
+    title: "Fermah Documentation",
+    description: "Programmable Execution layer",
+    siteName: "Fermah Docs",
+    images: [{ url: "/og.webp", width: 1920, height: 1080 }],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Fermah Documentation",
+    description: "Programmable Execution layer",
+    images: ["/og.webp"],
+  },
 };
 
 export default function RootLayout({
