@@ -80,7 +80,7 @@ const socialLinks = [
   },
   {
     icon: "ph:x-logo-duotone",
-    href: "https://x.com/fermaborachain",
+    href: "https://x.com/fermah_xyz",
     label: "X",
   },
   {

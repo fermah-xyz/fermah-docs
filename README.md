@@ -166,5 +166,5 @@ bun run deploy:prod
 - [Proof Explorer](https://explorer.fermah.xyz)
 - [System Status](https://status.fermah.xyz)
 - [Discord](https://discord.gg/zzJDPWppRU)
-- [X (Twitter)](https://x.com/fermaborachain)
+- [X (Twitter)](https://x.com/fermah_xyz)
 - [GitHub](https://github.com/fermah-xyz)

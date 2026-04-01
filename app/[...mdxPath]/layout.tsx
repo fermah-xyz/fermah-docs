@@ -38,7 +38,7 @@ export default async function DocsLayout({
                 <a href="https://explorer.fermah.xyz/" target="_blank" rel="noopener noreferrer" className="hover:underline">Explorer</a>
                 <a href="https://status.fermah.xyz" target="_blank" rel="noopener noreferrer" className="hover:underline">Status</a>
                 <a href="https://discord.gg/zzJDPWppRU" target="_blank" rel="noopener noreferrer" className="hover:underline">Discord</a>
-                <a href="https://x.com/fermaborachain" target="_blank" rel="noopener noreferrer" className="hover:underline">X</a>
+                <a href="https://x.com/fermah_xyz" target="_blank" rel="noopener noreferrer" className="hover:underline">X</a>
               </div>
             </div>
           </Footer>
