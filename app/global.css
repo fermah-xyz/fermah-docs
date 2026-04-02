@@ -79,6 +79,7 @@ pre {
 /* Code block left padding — prevent text overlapping border */
 pre code {
   padding-left: 1rem !important;
+  display: block !important;
 }
 
 /* Inline code styling — stand out from body text */

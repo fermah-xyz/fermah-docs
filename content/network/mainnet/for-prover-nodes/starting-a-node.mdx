@@ -57,6 +57,7 @@ After=network.target local-fs.target
 Type=simple
 User=%u
 Group=%g
+Environment=DOCKER_HOST=unix:///run/user/1001/docker.sock
 ExecStart=/home/%u/.fermah/bin/fpn
 ExecStop=/bin/kill -s TERM $MAINPID
 Restart=on-failure

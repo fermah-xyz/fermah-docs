@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { Icon } from '@iconify/react'
 
 export function InlineCode({ children, className, ...props }: React.ComponentProps<'code'>) {
@@ -8,8 +8,16 @@ export function InlineCode({ children, className, ...props }: React.ComponentPro
   const [hovered, setHovered] = useState(false)
   const ref = useRef<HTMLElement>(null)
 
-  // Code blocks from Shiki have a className like "language-xxx" — skip those
-  const isCodeBlock = className && /language-/.test(className)
+  // Synchronous check for Shiki code blocks (covers SSR + first render)
+  const hasLanguageClass = className && /language-/.test(className)
+  // Fallback for code blocks without a language class
+  const [isInsidePre, setIsInsidePre] = useState(false)
+
+  useEffect(() => {
+    if (!hasLanguageClass && ref.current?.closest('pre')) {
+      setIsInsidePre(true)
+    }
+  }, [hasLanguageClass])
 
   const handleCopy = useCallback(() => {
     const text = ref.current?.textContent || ''
@@ -19,7 +27,7 @@ export function InlineCode({ children, className, ...props }: React.ComponentPro
     })
   }, [])
 
-  if (isCodeBlock) {
+  if (hasLanguageClass || isInsidePre) {
     return <code className={className} {...props}>{children}</code>
   }
 
@@ -31,35 +39,26 @@ export function InlineCode({ children, className, ...props }: React.ComponentPro
       onMouseLeave={() => setHovered(false)}
       style={{
         position: 'relative',
-        display: 'inline-flex',
-        alignItems: 'center',
         cursor: 'pointer',
         ...props.style,
       }}
       onClick={handleCopy}
       {...props}
     >
-      {/* Hover overlay */}
+      {children}
       {hovered && (
         <span
           style={{
             position: 'absolute',
             inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            paddingRight: '0.3em',
             background: 'rgba(0, 0, 0, 0.15)',
             borderRadius: 'inherit',
             pointerEvents: 'none',
-          }}
-        />
-      )}
-      <span style={{ position: 'relative' }}>{children}</span>
-      {hovered && (
-        <span
-          style={{
-            position: 'relative',
-            marginLeft: '0.3em',
-            flexShrink: 0,
             color: copied ? '#06c19d' : '#a2b4c1',
-            lineHeight: 1,
           }}
         >
           <Icon icon={copied ? 'ph:check-bold' : 'ph:copy-duotone'} width={12} />
