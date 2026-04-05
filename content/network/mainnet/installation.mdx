@@ -13,6 +13,10 @@ import { Callout } from 'nextra/components'
 **Recommended**: You can get fully onboarded into Fermah using the script if you opt yes in the onboarding prompt.
 </Callout>
 
+<Callout type="warning">
+Make sure you have provided your **Mainnet Ethereum Public Address** to Fermah for whitelisting before starting the installation. Reach out through our [support channels](/network/resources/support) if you haven't done so yet.
+</Callout>
+
 <Callout type="info">
 The installer supports AWS KMS remote signer. Make sure you have configured your instance to access it and have your key name ready before running the install script.
 
@@ -50,7 +54,9 @@ export DOCKER_HOST=unix:///run/user/<ID>/docker.sock
 
 ### Install CUDA drivers
 
-Our binaries are built for **CUDA 12.2** on **Ubuntu 22.04**. Both the CUDA drivers and toolkit are required.
+We provide binaries for **CUDA 12.2** and **CUDA 12.9**. Both the CUDA drivers and toolkit are required.
+
+#### Ubuntu 22.04 (CUDA 12.2)
 
 ```bash
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
@@ -58,6 +64,19 @@ sudo dpkg -i cuda-keyring_1.1-1_all.deb
 rm cuda-keyring_1.1-1_all.deb
 sudo apt-get install -y cuda-drivers cuda-toolkit-12-2
 ```
+
+#### Ubuntu 24.04 (CUDA 12.9)
+
+```bash
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+rm cuda-keyring_1.1-1_all.deb
+sudo apt-get install -y cuda-drivers cuda-toolkit-12-9
+```
+
+<Callout type="info">
+Other Linux distributions are also supported as long as they provide the required GLIBC version: **GLIBC 2.34** for CUDA 12.2 binaries and **GLIBC 2.39** for CUDA 12.9 binaries.
+</Callout>
 
 ### Install CUDA containers toolkit for rootless docker
 
@@ -94,7 +113,7 @@ The script is able to:
 - Download the default prover (ZkSync)
 - Install configuration files
 - Setup telemetry collector (requires Docker)
-- Onboard into Fermah Network (requires [Whitelist Keys](/network/mainnet/for-prover-nodes/machine-secret#whitelist-keys))
+- Onboard into Fermah Network
 
 ```bash
 bash <(curl -s https://storage.googleapis.com/fermah-mainnet-releases/install.sh)
@@ -102,7 +121,7 @@ bash <(curl -s https://storage.googleapis.com/fermah-mainnet-releases/install.sh
 
 Script will run in interactive mode by default. You may pass in `--help` to see what arguments are available.
 
-Then you need to run `fpn` as a daemon. We recommend using `systemd` (see [Starting a Node](/network/mainnet/for-prover-nodes/starting-a-node) for more details).
+Then you need to run `fpn` as a daemon. We recommend using `systemd` (see [Starting a Node](/network/mainnet/starting-a-node) for more details).
 
 <Callout type="error">
 We recommend verifying the script first through GPG verification, check [GPG](/network/resources/gpg).
@@ -112,15 +131,14 @@ We recommend verifying the script first through GPG verification, check [GPG](/n
 
 ### Supported OS/Arch
 
-| OS | Arch |
-| --- | --- |
-| ubuntu-latest (22.04 LTS) | amd64 |
+| OS | CUDA | GLIBC | Arch |
+| --- | --- | --- | --- |
+| Ubuntu 22.04 LTS | 12.2 | 2.34+ | amd64 |
+| Ubuntu 24.04 LTS | 12.9 | 2.39+ | amd64 |
+
+Other Linux distributions are supported as long as they provide the required GLIBC version for their respective CUDA target.
 
 Please contact us if you need other prebuilt binaries.
-
-<Callout type="info">
-Note that `ubuntu-latest` also applies to most linux distros, as long as the system's GLIBC version is 2.34+ and CUDA version is 12.2.
-</Callout>
 
 <Callout type="warning">
 Release will be installed to `~/.fermah/bin/prover-node-<version>` and soft linked to `prover-node`. If you wish to run the binary using this name, you may add the folder to the `PATH` environment variable using the hint provided by the install script.

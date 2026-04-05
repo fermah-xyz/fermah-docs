@@ -1,13 +1,17 @@
 ---
-title: "For Prover Nodes"
+title: "Mainnet Overview"
 ---
 
 import { Callout } from 'nextra/components'
 
-# For Prover Nodes
+# Mainnet Overview
 
 <Callout type="info">
-**Recommended**: Follow the quickstart guide [Installation](/network/mainnet/for-prover-nodes/installation) and go through the onboarding using the script.
+**Recommended**: Follow the quickstart guide [Installation](/network/mainnet/installation) and go through the onboarding using the script.
+</Callout>
+
+<Callout type="warning">
+Before starting onboarding, make sure you have provided your **Mainnet Ethereum Public Address** to Fermah for whitelisting. Reach out through our [support channels](/network/resources/support) if you haven't done so yet.
 </Callout>
 
 For complete manual onboarding, you may follow these steps to get started:
@@ -22,7 +26,7 @@ Customize your installation based on your hardware and provers.
 
 ### 3. Machine Secret
 
-Setup proper authentication for your prover node and get whitelisted.
+Setup proper authentication for your prover node.
 
 ### 4. Registration
 
@@ -46,11 +50,15 @@ These steps will get a Prover Node fully onboarded into Fermah Mainnet.
 
 You will also need the following:
 
-- Ubuntu 22.04 LTS (GLIBC 2.34+)
+- Ubuntu 22.04 LTS or Ubuntu 24.04 LTS
 - Privileged Docker v24+ (telemetry)
 - Rootless Docker v24+ (provers)
-- <GlossaryTooltip>CUDA</GlossaryTooltip> drivers v12.2 (see NVIDIA [docs](https://developer.nvidia.com/cuda-12-2-0-download-archive?target_os=Linux&target_arch=x86_64&Distribution=Ubuntu&target_version=22.04&target_type=deb_network))
+- <GlossaryTooltip>CUDA</GlossaryTooltip> drivers v12.2 or v12.9 (see NVIDIA [docs](https://developer.nvidia.com/cuda-downloads))
 - CUDA containers toolkit for rootless docker (see NVIDIA [docs](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html))
+
+<Callout type="info">
+Other Linux distributions are also supported as long as they provide the required GLIBC version: **GLIBC 2.34** for CUDA 12.2 and **GLIBC 2.39** for CUDA 12.9.
+</Callout>
 - Mainnet Ethereum Node RPC URL access with your API key (e.g. Alchemy, Infura or private)
 - Datadog API key (provided by Fermah)
 
