@@ -247,7 +247,7 @@ The telemetry settings in `~/.fermah/config/prover-node-config.toml` should poin
 ```toml
 [telemetry]
 mode = "Otlp"
-layers = "logs,metrics,traces"
+layers = "metrics,traces"
 level = "info"
 filters = []
 interval = 30
@@ -257,6 +257,10 @@ temporality = "Cumulative"
 endpoint = "http://localhost:4317/"
 timeout = "3s"
 ```
+
+<Callout type="warning">
+Make sure `layers` is set to `"metrics,traces"` (without `logs`) in both the `[telemetry]` and `[zksync.telemetry]` sections. The collector does not forward logs to the gateway, so exporting them would generate unnecessary overhead. If your config still has `"logs,metrics,traces"`, remove the `logs` entry.
+</Callout>
 
 ## Custom Forwarding
 
