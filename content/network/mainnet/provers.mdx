@@ -78,7 +78,7 @@ This mode also runs the proof compressor, which needs a GPU with at least 24GB o
 ```toml
 [zksync.mode.CP]
 num_workers = 16
-max_gpu_vram_allocation = 1024
+max_gpu_vram_allocation = 25769803776
 ```
 
 Minimum requirements for a ZkSync **circuit prover.**
@@ -93,4 +93,25 @@ Suggested Cloud Instance Types:
 
 <Callout type="info">
 This prover is automatically installed with our latest release.
+</Callout>
+
+### Increasing Workers
+
+The `num_workers` setting in the Circuit Prover (CP) configuration controls how many proving jobs run in parallel. Setting this to match your machine's vCPU count improves proving speed and results in more tasks being allocated to your node.
+
+In `~/.fermah/config/prover-node-config.toml`, update `num_workers` to match your vCPU count:
+
+```toml
+[zksync]
+mode = { CP = { num_workers = 32, max_gpu_vram_allocation = 25769803776 } }
+```
+
+For example, on a machine with **32 vCPUs**, set `num_workers = 32`.
+
+<Callout type="warning">
+Setting `num_workers` **higher** than your vCPU count does **not** increase performance. The optimal value is equal to the number of available vCPUs.
+</Callout>
+
+<Callout type="info">
+In a future update, the binary will automatically detect the number of vCPUs and set the correct worker count. For now, this must be configured manually.
 </Callout>
