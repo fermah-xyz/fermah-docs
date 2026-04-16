@@ -21,6 +21,7 @@ const pathIconMap: Record<string, string> = {
   '/network/mainnet/telemetry': 'ph:chart-line-duotone',
   '/network/mainnet/telemetry/custom-export': 'ph:export-duotone',
   '/network/mainnet/starting-a-node': 'ph:play-duotone',
+  '/network/mainnet/multi-gpu-setup': 'ph:desktop-tower-duotone',
   '/network/resources/gpg': 'ph:fingerprint-duotone',
   '/network/resources/support': 'ph:headset-duotone',
 }

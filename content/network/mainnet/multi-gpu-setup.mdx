@@ -1,0 +1,187 @@
+---
+title: "Multi-GPU Setup"
+description: "Running multiple Prover Node instances on a single machine with multiple GPUs."
+---
+
+import { Callout } from 'nextra/components'
+
+# Multi-GPU Setup
+
+Machines with multiple GPUs can run one <GlossaryTooltip>Prover Node</GlossaryTooltip> instance per GPU. Each instance runs in its own Docker container with a dedicated Fermah home directory.
+
+All instances on the same machine can share the same machine secret, but the [configuration](/network/mainnet/configuration) must declare all GPUs.
+
+## Configuration
+
+Your `prover-node-config.toml` must include an entry for each GPU on the machine:
+
+```toml
+[[hardware.gpus]]
+price = "117"
+resource.gpuId = "unknown-gpu-0"
+[[hardware.gpus.resource.specs]]
+VRAM = 25769803776
+
+[[hardware.gpus]]
+price = "117"
+resource.gpuId = "unknown-gpu-1"
+[[hardware.gpus.resource.specs]]
+VRAM = 25769803776
+```
+
+<Callout type="info">
+If your machine has more than two GPUs, add additional `[[hardware.gpus]]` entries following the same pattern, incrementing the `gpuId` index.
+</Callout>
+
+## Container Image
+
+Build a minimal container image for the prover node:
+
+```dockerfile
+FROM nvidia/cuda:12.9.1-runtime-ubuntu24.04
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates tini && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV HOME=/root
+WORKDIR /root
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/root/.fermah/bin/fpn"]
+```
+
+Build the image:
+
+```bash
+docker build -t fermah-fpn:24.04 .
+```
+
+<Callout type="info">
+Replace the base image with `nvidia/cuda:12.2.0-runtime-ubuntu22.04` if you are running CUDA 12.2.
+</Callout>
+
+## Directory Structure
+
+Each GPU instance needs its own Fermah home directory. The machine secret and configuration can be shared across instances by copying the base directory:
+
+```bash
+# GPU 0 uses the default home directory
+ls ~/.fermah
+
+# GPU 1 gets a copy of the home directory
+cp -r ~/.fermah ~/.fermah-gpu1
+
+# GPU N...
+cp -r ~/.fermah ~/.fermah-gpuN
+```
+
+## Systemd Services
+
+Create one systemd service per GPU. The key differences between services are:
+
+- **Container name** — unique per instance (e.g. `fermah-gpu0`, `fermah-gpu1`)
+- **GPU device** — pinned via `--gpus '"device=N"'` and `NVIDIA_VISIBLE_DEVICES`
+- **Host directory** — each instance mounts its own Fermah home to `/root/.fermah` inside the container
+
+### GPU 0
+
+Create `/etc/systemd/system/fermah-gpu0.service`:
+
+```systemd
+[Unit]
+Description=Fermah Prover Node - GPU 0
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+
+ExecStartPre=/bin/mkdir -p /var/log/fermah-gpu0
+ExecStartPre=/bin/chmod 755 /var/log/fermah-gpu0
+
+ExecStart=/usr/bin/docker run --rm --name fermah-gpu0 \
+  --gpus '"device=0"' \
+  --network host \
+  -e HOME=/root \
+  -e NVIDIA_VISIBLE_DEVICES=0 \
+  -v /root/.fermah:/root/.fermah \
+  -v /var/log/fermah-gpu0:/var/log/fermah \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  fermah-fpn:24.04
+
+ExecStop=/usr/bin/docker stop -t 20 fermah-gpu0
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### GPU 1
+
+Create `/etc/systemd/system/fermah-gpu1.service`:
+
+```systemd
+[Unit]
+Description=Fermah Prover Node - GPU 1
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+
+ExecStartPre=/bin/mkdir -p /var/log/fermah-gpu1
+ExecStartPre=/bin/chmod 755 /var/log/fermah-gpu1
+
+ExecStart=/usr/bin/docker run --rm --name fermah-gpu1 \
+  --gpus '"device=1"' \
+  --network host \
+  -e HOME=/root \
+  -e NVIDIA_VISIBLE_DEVICES=1 \
+  -v /root/.fermah-gpu1:/root/.fermah \
+  -v /var/log/fermah-gpu1:/var/log/fermah \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  fermah-fpn:24.04
+
+ExecStop=/usr/bin/docker stop -t 20 fermah-gpu1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+For additional GPUs, repeat the pattern incrementing the device index, container name, host directory, and log path.
+
+## Enable Services
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable fermah-gpu0.service fermah-gpu1.service
+sudo systemctl start fermah-gpu0.service fermah-gpu1.service
+```
+
+Verify both instances are running:
+
+```bash
+sudo systemctl status fermah-gpu0.service fermah-gpu1.service
+```
+
+## Monitoring
+
+Each instance writes logs to its own directory (`/var/log/fermah-gpu0`, `/var/log/fermah-gpu1`, etc.) and can also be inspected through `journalctl`:
+
+```bash
+journalctl -u fermah-gpu0.service -f
+journalctl -u fermah-gpu1.service -f
+```

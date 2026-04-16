@@ -27,5 +27,8 @@ export default {
   },
   'starting-a-node': {
     title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:play-duotone" width={18} /> Starting a Node</span>
+  },
+  'multi-gpu-setup': {
+    title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:desktop-tower-duotone" width={18} /> Multi-GPU Setup</span>
   }
 }

@@ -6,29 +6,243 @@ import { Callout } from 'nextra/components'
 
 # Telemetry
 
-Prover Nodes require running a sidecar Docker container to export metrics visible in a public Grafana dashboard.
+Prover Nodes run a local **OpenTelemetry Collector** sidecar that collects metrics and traces from the prover node process, scrapes host-level metrics, and forwards everything to the Fermah Gateway via authenticated gRPC.
 
-## API Key
+<Callout type="warning">
+The Datadog Agent has been fully deprecated as of **April 17, 2026**. All telemetry is now handled through the OTel Collector. If you are still running a Datadog Agent, see [Migrating from Datadog Agent](#migrating-from-datadog-agent) below.
+</Callout>
 
-Please reach out through our channels to get your telemetry API key.
+## Installation
+
+Telemetry is installed through the Fermah [install script](/network/mainnet/installation#install-the-fermah-prover-node). During installation, select the **Telemetry** option to automatically set up the OTel Collector.
+
+The installer creates the collector configuration, Docker Compose file, and `.env` file with the required environment variables.
+
+<Callout type="info">
+You can re-run the install script at any time and select only the **Telemetry** step to update or reinstall the collector.
+</Callout>
+
+## Prerequisites
+
+The OTel Collector requires **root Docker** (not rootless) to access host metrics through `/proc`, `/sys`, and the host filesystem.
+
+Your server needs **both** Docker installations:
+
+| Docker Mode | Used By |
+| --- | --- |
+| Root (privileged) | Telemetry collector (host metrics) |
+| Rootless | Prover containers |
+
+Both are set up during the [server preparation](/network/mainnet/installation#prepare-the-server) step.
+
+## Architecture
+
+The collector receives traces and metrics from the prover node over `localhost:4317`, scrapes host-level metrics (CPU, memory, disk, network), and forwards everything to the Fermah Gateway.
+
+```
+Prover Node ──▶ OTel Collector (localhost) ──▶ Fermah Gateway
+                      ▲
+               Host Metrics
+          (CPU, memory, disk, network)
+```
+
+<Callout type="info">
+Logs are not collected by the telemetry pipeline. Only metrics and traces are forwarded to the gateway.
+</Callout>
+
+## Environment Variables
+
+The collector requires three environment variables, set automatically by the installer into a `.env` file:
+
+| Variable | Description |
+| --- | --- |
+| `FERMAH_OTEL_TOKEN` | Bearer token for authenticating with the Fermah Gateway |
+| `FERMAH_GATEWAY_ENDPOINT` | Gateway gRPC endpoint (e.g. `telemetry.fermah.xyz:4317`) |
+| `FERMAH_OPERATOR_HOST` | Friendly name for this operator (e.g. `fermah-cp-1a2b`). Shows as `fermah.operator_host` tag. Defaults to OS hostname if unset. |
 
 ## Running Telemetry
 
-During installation, you can opt into telemetry, which launches a Datadog Agent docker container. The prover node then connects to a localhost collector.
+The collector runs as a root Docker container. A shared `fermah-net` network is required for connectivity:
 
-## OpenTelemetry
+```bash
+docker network create fermah-net
+```
 
-All operators can enable metrics export using the OTL protocol through Datadog Agent with a provided API key. The system currently exports:
+Start the collector:
 
-- Logs
-- Tracing Spans (Instrumentation)
-- Metrics (e.g. Gauges, Counters)
+```bash
+sudo docker compose -p fermah-telemetry up -d
+```
 
-Operators may customize configurations for additional OpenTelemetry collectors. See [Custom Export](/network/mainnet/telemetry/custom-export) for more details.
+Verify it is running:
 
-## Configuration
+```bash
+sudo docker compose -p fermah-telemetry logs
+```
 
-The telemetry settings appear in the `~/.fermah/config/prover-node-config.toml` file:
+## Collector Reference
+
+Below is the full collector configuration and Docker Compose file for reference. These are managed automatically by the installer.
+
+<details>
+<summary>`docker-compose.yml`</summary>
+
+```yaml
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.150.1
+    container_name: fermah-otel-collector
+    restart: unless-stopped
+    pid: host
+    env_file: .env
+    environment:
+      - FERMAH_OTEL_TOKEN=${FERMAH_OTEL_TOKEN}
+      - FERMAH_GATEWAY_ENDPOINT=${FERMAH_GATEWAY_ENDPOINT}
+      - FERMAH_OPERATOR_HOST=${FERMAH_OPERATOR_HOST}
+    volumes:
+      - ./otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/hostfs:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - fermah-net
+
+networks:
+  fermah-net:
+    external: true
+```
+
+</details>
+
+<details>
+<summary>`otel-collector.yml`</summary>
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  hostmetrics:
+    collection_interval: 10s
+    root_path: /hostfs
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+          system.cpu.physical.count:
+            enabled: true
+          system.cpu.logical.count:
+            enabled: true
+      disk:
+      filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+        exclude_mount_points:
+          mount_points: ["/snap/*", "/boot", "/hostfs/snap/*", "/hostfs/boot"]
+          match_type: regexp
+        exclude_fs_types:
+          fs_types: [squashfs, tmpfs, devtmpfs, sysfs, proc]
+          match_type: strict
+      load:
+      memory:
+      network:
+      paging:
+        metrics:
+          system.paging.utilization:
+            enabled: true
+      processes:
+
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: otelcol
+          scrape_interval: 10s
+          static_configs:
+            - targets: ["0.0.0.0:8888"]
+
+processors:
+  batch:
+    send_batch_max_size: 1000
+    send_batch_size: 100
+    timeout: 10s
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  resourcedetection:
+    detectors: [env, system]
+    system:
+      resource_attributes:
+        os.description:
+          enabled: true
+        host.arch:
+          enabled: true
+        host.cpu.vendor.id:
+          enabled: true
+        host.cpu.family:
+          enabled: true
+        host.cpu.model.id:
+          enabled: true
+        host.cpu.model.name:
+          enabled: true
+        host.cpu.stepping:
+          enabled: true
+        host.cpu.cache.l2.size:
+          enabled: true
+
+  resource/operator_host:
+    attributes:
+      - key: host.name
+        value: "${FERMAH_OPERATOR_HOST}"
+        action: upsert
+      - key: fermah.operator_host
+        value: "${FERMAH_OPERATOR_HOST}"
+        action: upsert
+
+exporters:
+  otlp_grpc:
+    endpoint: "${FERMAH_GATEWAY_ENDPOINT}"
+    headers:
+      authorization: "Bearer ${FERMAH_OTEL_TOKEN}"
+    tls:
+      insecure: true
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+    retry_on_failure:
+      enabled: true
+
+connectors:
+  datadog/connector:
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, resource/operator_host, batch]
+      exporters: [datadog/connector, otlp_grpc]
+    metrics:
+      receivers: [datadog/connector, otlp, hostmetrics, prometheus]
+      processors: [memory_limiter, resourcedetection, resource/operator_host, batch]
+      exporters: [otlp_grpc]
+```
+
+</details>
+
+## Prover Node Configuration
+
+The telemetry settings in `~/.fermah/config/prover-node-config.toml` should point to the local collector:
 
 ```toml
 [telemetry]
@@ -38,10 +252,25 @@ level = "info"
 filters = []
 interval = 30
 temporality = "Cumulative"
+
+[telemetry.export]
+endpoint = "http://localhost:4317/"
+timeout = "3s"
 ```
 
-By default, we export all logs that match INFO level.
+## Custom Forwarding
 
-<Callout type="info">
-More configuration options coming soon.
-</Callout>
+Since every operator runs a local OTel Collector, you can easily add your own backends as additional export destinations. See [Custom Export](/network/mainnet/telemetry/custom-export) for details.
+
+---
+
+## Migrating from Datadog Agent
+
+If you are still running the Datadog Agent, bring it down first:
+
+```bash
+docker ps                   # find the Datadog Agent container ID
+docker rm -f <container_id> # remove the Datadog Agent container
+```
+
+Then re-run the [install script](/network/mainnet/installation#install-the-fermah-prover-node) and select only the **Telemetry** step.

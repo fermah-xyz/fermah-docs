@@ -25,7 +25,9 @@ During installation, you need to provide your assigned prover node name, so it f
 
 ## Prepare the server
 
-### Install Privileged Docker
+### Install Root Docker
+
+Root Docker is required for the telemetry collector, which needs access to host metrics through `/proc`, `/sys`, and the host filesystem.
 
 Install Docker with apt (see official [documentation](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository))
 
@@ -41,7 +43,9 @@ sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
-### Install rootless docker
+### Install Rootless Docker
+
+Rootless Docker is used for running prover containers. Both root and rootless Docker can coexist on the same machine.
 
 Install rootless Docker with apt (see official [documentation](https://docs.docker.com/engine/security/rootless/#install)).
 
@@ -112,7 +116,7 @@ The script is able to:
 - Install or update latest release
 - Download the default prover (ZkSync)
 - Install configuration files
-- Setup telemetry collector (requires Docker)
+- Setup telemetry collector (requires root Docker)
 - Onboard into Fermah Network
 
 ```bash

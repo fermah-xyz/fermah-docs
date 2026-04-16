@@ -6,273 +6,89 @@ import { Callout } from 'nextra/components'
 
 # Custom Export
 
-Prover Nodes can choose to export to their own OTLP endpoints using a combination of an OtelCol docker container, and an additional receiver of your choice, such as Grafana Alloy or individual options like Prometheus.
+Since every operator runs a local OTel Collector, adding your own telemetry backends is straightforward. You can dual-export to both the Fermah Gateway and your own OTLP-compatible destinations such as Grafana Alloy, Prometheus, or any other collector.
 
 <Callout type="info">
-Currently, we only support metrics, traces and logs through gRPC OTLP.
+All telemetry is exported through gRPC OTLP: metrics and traces.
 </Callout>
 
-The architecture routes prover node exports through OtelCol, which then dual-exports to both Datadog and Grafana Alloy:
+## Adding a Custom Exporter
 
-| Service | Purpose | Port |
-| --- | --- | --- |
-| Otel Collector | gRPC OTLP Receiver | 4317 |
-| Datadog Agent | OtelCollector Export Endpoint | 4320 |
-| Grafana Alloy | OtelCollector Export Endpoint | 4321 |
-
-## Datadog Agent
-
-The Datadog Agent configuration requires modifying the port to 4320 by updating the docker-compose.yml ports mapping from the default 4317:
+Add a second exporter to your `otel-collector.yml` alongside the existing Fermah gateway exporter. This example routes telemetry to a Grafana Alloy instance running on the same Docker network:
 
 ```yaml
-ports:
-  - "4320:4317"
-```
-
-## Grafana Alloy
-
-Alloy setup requires two files: a docker-compose service declaration and a configuration file.
-
-### docker-compose service
-
-```yaml
-services:
-  alloy:
-    restart: always
-    image: grafana/alloy:latest
-    ports:
-      - "4321:4317"
-      - "12345:12345"
-    volumes:
-      - ./config.alloy:/etc/alloy/config.alloy
-    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
-    environment:
-      - GRAFANA_CLOUD_API_KEY=${GRAFANA_CLOUD_API_KEY}
-```
-
-### config.alloy
-
-The config must be customized based on each prover node's setup, specifying export endpoints for Prometheus (metrics), Tempo (traces), and Loki (logs).
-
-If using local receivers for each endpoint, please refer to [official alloy configuration reference](https://grafana.com/docs/alloy/latest/get-started/configuration-syntax/). However, the only change usually needed is removing the authentication and changing the endpoint URLs.
-
-```hcl
-logging {
-  level  = "info"
-  format = "logfmt"
-}
-
-otelcol.receiver.otlp "default" {
-	grpc { }
-
-	output {
-		metrics = [otelcol.processor.resourcedetection.default.input]
-		logs    = [otelcol.processor.resourcedetection.default.input]
-		traces  = [otelcol.processor.resourcedetection.default.input]
-	}
-}
-
-otelcol.processor.resourcedetection "default" {
-	detectors = ["env", "system", "ec2", "gcp", "docker"]
-
-	system {
-		hostname_sources = ["os"]
-	}
-
-	output {
-		metrics = [otelcol.processor.transform.add_resource_attributes_as_metric_attributes.input]
-		logs    = [otelcol.processor.batch.default.input]
-		traces  = [
-			otelcol.processor.batch.default.input,
-			otelcol.connector.host_info.default.input,
-		]
-	}
-}
-
-otelcol.connector.host_info "default" {
-	host_identifiers = ["host.name"]
-
-	output {
-		metrics = [otelcol.processor.batch.default.input]
-	}
-}
-
-otelcol.processor.transform "add_resource_attributes_as_metric_attributes" {
-	error_mode = "ignore"
-
-	metric_statements {
-		context    = "datapoint"
-		statements = [
-			"set(attributes[\"deployment.environment\"], resource.attributes[\"deployment.environment\"])",
-			"set(attributes[\"service.version\"], resource.attributes[\"service.version\"])",
-		]
-	}
-
-	output {
-		metrics = [otelcol.processor.batch.default.input]
-	}
-}
-
-otelcol.processor.batch "default" {
-	output {
-		metrics = [otelcol.exporter.prometheus.metrics_service.input]
-		logs    = [otelcol.exporter.loki.logs_service.input]
-		traces  = [otelcol.exporter.otlp.grafana_cloud_tempo.input]
-	}
-}
-
-otelcol.exporter.prometheus "metrics_service" {
-	add_metric_suffixes = false
-	forward_to          = [prometheus.remote_write.default.receiver]
-}
-
-otelcol.exporter.loki "logs_service" {
-	forward_to          = [loki.write.default.receiver]
-}
-
-otelcol.exporter.otlp "grafana_cloud_tempo" {
-	client {
-		endpoint = "tempo-prod-04-prod-us-east-0.grafana.net:443"
-		auth     = otelcol.auth.basic.grafana_cloud_tempo.handler
-	}
-}
-
-otelcol.auth.basic "grafana_cloud_tempo" {
-	username = "863733"
-	password = env("GRAFANA_CLOUD_API_KEY")
-}
-
-loki.write "default" {
-    endpoint {
-        url = "https://logs-prod-006.grafana.net/loki/api/v1/push"
-        basic_auth {
-            username = "869417"
-            password = env("GRAFANA_CLOUD_API_KEY")
-        }
-    }
-}
-
-prometheus.remote_write "default" {
-  endpoint {
-    url = "https://prometheus-prod-13-prod-us-east-0.grafana.net/api/prom/push"
-      basic_auth {
-        username = "1537843"
-        password = env("GRAFANA_CLOUD_API_KEY")
-      }
-  }
-}
-```
-
-## Otel Collector
-
-This container is the important glue that ties everything together. Otelcol endpoint will now be the target export of the prover node binary, as it will run listening on port **4317**.
-
-The otelcol container needs both a docker compose service declaration and a YML configuration file. Both will be declared in the section below.
-
-We need to run everything on the same compose file, as conveniently, docker compose creates a network for each compose file, letting us refer to each service by their DNS name which is the service name declared in the file.
-
-### Final Docker Compose File
-
-```yaml
-configs:
-  datadog_config:
-    content: |
-      apm_config:
-        apm_non_local_traffic: true
-
-      # Use java container support
-      jmx_use_container_support: true
-
-      otlp_config:
-          metrics:
-              # Add all resource attributes as tags for metrics
-              resource_attributes_as_tags: true
-
-services:
-  datadog:
-    image: datadog/agent:7.60.1
-    environment:
-     - DD_API_KEY=${DATADOG_API_KEY}
-     - DD_SITE=us5.datadoghq.com
-     - DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT=0.0.0.0:4317
-     - DD_LOGS_ENABLED=true
-     - DD_OTLP_CONFIG_LOGS_ENABLED=true
-    volumes:
-     - /var/run/docker.sock:/var/run/docker.sock
-     - /proc/:/host/proc/:ro
-     - /sys/fs/cgroup:/host/sys/fs/cgroup:ro
-     - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    configs:
-      - source: datadog_config
-        target: /etc/datadog-agent/datadog.yaml
-    ports:
-      - "4320:4317"
-    restart: unless-stopped
-
-  alloy:
-    restart: unless-stopped
-    image: grafana/alloy:latest
-    ports:
-      - "4321:4317"
-      - "12345:12345"
-    volumes:
-      - ./config.alloy:/etc/alloy/config.alloy
-    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
-    environment:
-      - GRAFANA_CLOUD_API_KEY=${GRAFANA_CLOUD_API_KEY}
-
-  otelcol:
-    image: otel/opentelemetry-collector-contrib
-    volumes:
-      - ./otel-config.yaml:/etc/otelcol-contrib/config.yaml
-    ports:
-      - 13133:13133 # health_check extension
-      - 4317:4317 # OTLP gRPC receiver
-```
-
-### otel-config.yml
-
-```yaml
-receivers:
-  otlp:
-    protocols:
-      grpc:
-        endpoint: 0.0.0.0:4317
-
 exporters:
-  otlp/dd:
-    endpoint: datadog:4317
+  otlp_grpc:
+    endpoint: "${FERMAH_GATEWAY_ENDPOINT}"
+    headers:
+      authorization: "Bearer ${FERMAH_OTEL_TOKEN}"
     tls:
       insecure: true
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+    retry_on_failure:
+      enabled: true
 
-  otlp/alloy:
+  otlp/custom:
     endpoint: alloy:4317
     tls:
       insecure: true
+```
 
+Then add your custom exporter to the pipeline outputs:
+
+```yaml
 service:
   pipelines:
-    metrics:
-      receivers: [otlp]
-      exporters: [otlp/dd, otlp/alloy]
     traces:
       receivers: [otlp]
-      exporters: [otlp/dd, otlp/alloy]
-    logs:
-      receivers: [otlp]
-      exporters: [otlp/dd, otlp/alloy]
+      processors: [memory_limiter, resourcedetection, resource/operator_host, batch]
+      exporters: [datadog/connector, otlp_grpc, otlp/custom]
+    metrics:
+      receivers: [datadog/connector, otlp, hostmetrics, prometheus]
+      processors: [memory_limiter, resourcedetection, resource/operator_host, batch]
+      exporters: [otlp_grpc, otlp/custom]
 ```
 
-## Deployment
-
-With this setup, you'll end up with the following files:
-
-- docker-compose.yml
-- config.alloy
-- otel-config.yml
-
-When running `docker compose up -d`, make sure you also specify the Datadog API key that was assigned to your prover node (prefix the command with `DATADOG_API_KEY=${API_KEY}` ) and any other API keys such as for Grafana Cloud.
+Restart the collector after modifying the configuration:
 
 ```bash
-DATADOG_API_KEY=${API_KEY} GRAFANA_CLOUD_API_KEY=${API_KEY} docker compose up -d
+sudo docker compose -p fermah-telemetry restart
 ```
+
+## Grafana Alloy Example
+
+To run Grafana Alloy as a custom backend, add it to the same `fermah-net` Docker network:
+
+```yaml
+services:
+  alloy:
+    image: grafana/alloy:latest
+    ports:
+      - "12345:12345"
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    environment:
+      - GRAFANA_CLOUD_API_KEY=${GRAFANA_CLOUD_API_KEY}
+    networks:
+      - fermah-net
+    restart: unless-stopped
+
+networks:
+  fermah-net:
+    external: true
+```
+
+The Alloy config specifies export endpoints for Prometheus (metrics) and Tempo (traces). Customize the endpoints and credentials for your environment.
+
+If using local receivers, refer to the [official Alloy configuration reference](https://grafana.com/docs/alloy/latest/get-started/configuration-syntax/).
+
+## Standalone Export
+
+To disable forwarding to the Fermah Gateway entirely and only export to your own backend, replace the `otlp_grpc` exporter with your own and remove it from the pipelines.
+
+<Callout type="warning">
+Disabling Fermah Gateway forwarding means the Fermah team will not have visibility into your node's telemetry. This may affect our ability to provide support.
+</Callout>

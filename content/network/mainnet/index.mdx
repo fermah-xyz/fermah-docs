@@ -51,16 +51,15 @@ These steps will get a Prover Node fully onboarded into Fermah Mainnet.
 You will also need the following:
 
 - Ubuntu 22.04 LTS or Ubuntu 24.04 LTS
-- Privileged Docker v24+ (telemetry)
-- Rootless Docker v24+ (provers)
+- Root Docker v24+ (telemetry — requires host metrics access)
+- Rootless Docker v24+ (prover containers)
 - <GlossaryTooltip>CUDA</GlossaryTooltip> drivers v12.2 or v12.9 (see NVIDIA [docs](https://developer.nvidia.com/cuda-downloads))
 - CUDA containers toolkit for rootless docker (see NVIDIA [docs](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html))
+- Mainnet Ethereum Node RPC URL access with your API key (e.g. Alchemy, Infura or private)
 
 <Callout type="info">
 Other Linux distributions are also supported as long as they provide the required GLIBC version: **GLIBC 2.34** for CUDA 12.2 and **GLIBC 2.39** for CUDA 12.9.
 </Callout>
-- Mainnet Ethereum Node RPC URL access with your API key (e.g. Alchemy, Infura or private)
-- Datadog API key (provided by Fermah)
 
 ### Hardware Requirements
 
