@@ -7,9 +7,11 @@ import { Callout } from 'nextra/components'
 
 # Multi-GPU Setup
 
-Machines with multiple GPUs can run one <GlossaryTooltip>Prover Node</GlossaryTooltip> instance per GPU. Each instance runs in its own Docker container with a dedicated Fermah home directory.
+Machines with multiple GPUs can run one <GlossaryTooltip>Prover Node</GlossaryTooltip> instance per GPU. Each instance runs in its own container with a dedicated Fermah home directory and its own machine secret.
 
-All instances on the same machine can share the same machine secret, but the [configuration](/network/mainnet/configuration) must declare all GPUs.
+<Callout type="warning">
+Each instance **must** have a unique machine secret. Sharing the same secret across instances will cause registration conflicts.
+</Callout>
 
 ## Configuration
 
@@ -50,8 +52,6 @@ WORKDIR /root
 ENTRYPOINT ["/usr/bin/tini", "--", "/root/.fermah/bin/fpn"]
 ```
 
-Build the image:
-
 ```bash
 docker build -t fermah-fpn:24.04 .
 ```
@@ -60,24 +60,96 @@ docker build -t fermah-fpn:24.04 .
 Replace the base image with `nvidia/cuda:12.2.0-runtime-ubuntu22.04` if you are running CUDA 12.2.
 </Callout>
 
-## Directory Structure
+## Preparing Home Directories
 
-Each GPU instance needs its own Fermah home directory. The machine secret and configuration can be shared across instances by copying the base directory:
+Each GPU instance needs its own Fermah home directory with a **unique machine secret**. Generate a new secret before copying each directory:
 
 ```bash
-# GPU 0 uses the default home directory
-ls ~/.fermah
+# GPU 0 — generate the first machine secret
+prover-node gen-machine-secret
 
-# GPU 1 gets a copy of the home directory
+# Copy the home directory for GPU 1, then generate a new secret
 cp -r ~/.fermah ~/.fermah-gpu1
+prover-node gen-machine-secret
 
-# GPU N...
-cp -r ~/.fermah ~/.fermah-gpuN
+# The base ~/.fermah now has a new secret (GPU 1)
+# Swap so GPU 0 keeps the original
+mv ~/.fermah ~/.fermah-tmp
+mv ~/.fermah-gpu1 ~/.fermah
+mv ~/.fermah-tmp ~/.fermah-gpu1
 ```
 
-## Systemd Services
+For additional GPUs, repeat: copy the directory, then generate a new secret.
 
-Create one systemd service per GPU. The key differences between services are:
+<Callout type="warning">
+After creating each home directory, you must [register](/network/mainnet/registration) each instance independently.
+</Callout>
+
+## Docker Compose
+
+Docker Compose is the recommended approach for multi-GPU setups. Use the `device_ids` field to pin each service to a specific GPU.
+
+<Callout type="warning">
+This requires the NVIDIA Container Toolkit to be installed and configured. See [Install CUDA containers toolkit](/network/mainnet/installation#install-cuda-containers-toolkit-for-rootless-docker).
+</Callout>
+
+```yaml
+services:
+  fpn-gpu0:
+    image: fermah-fpn:24.04
+    restart: unless-stopped
+    environment:
+      NVIDIA_VISIBLE_DEVICES: 0
+    volumes:
+      - /home/fermah/.fermah:/root/.fermah:rw
+      - /var/log/fermah-gpu0:/var/log/fermah:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+    networks:
+      - fermah-net
+
+  fpn-gpu1:
+    image: fermah-fpn:24.04
+    restart: unless-stopped
+    environment:
+      NVIDIA_VISIBLE_DEVICES: 1
+    volumes:
+      - /home/fermah/.fermah-gpu1:/root/.fermah:rw
+      - /var/log/fermah-gpu1:/var/log/fermah:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['1']
+              capabilities: [gpu]
+    networks:
+      - fermah-net
+
+networks:
+  fermah-net:
+    external: true
+```
+
+Create the network and start:
+
+```bash
+docker network create fermah-net
+docker compose up -d
+```
+
+For additional GPUs, add more services following the same pattern, incrementing `device_ids`, `NVIDIA_VISIBLE_DEVICES`, and the host volume paths.
+
+## Systemd Alternative
+
+If you prefer systemd, create one service per GPU. The key differences between services are:
 
 - **Container name** — unique per instance (e.g. `fermah-gpu0`, `fermah-gpu1`)
 - **GPU device** — pinned via `--gpus '"device=N"'` and `NVIDIA_VISIBLE_DEVICES`
@@ -161,27 +233,22 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
-For additional GPUs, repeat the pattern incrementing the device index, container name, host directory, and log path.
-
-## Enable Services
-
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable fermah-gpu0.service fermah-gpu1.service
 sudo systemctl start fermah-gpu0.service fermah-gpu1.service
 ```
 
-Verify both instances are running:
-
-```bash
-sudo systemctl status fermah-gpu0.service fermah-gpu1.service
-```
-
 ## Monitoring
 
-Each instance writes logs to its own directory (`/var/log/fermah-gpu0`, `/var/log/fermah-gpu1`, etc.) and can also be inspected through `journalctl`:
+Each instance writes logs to its own directory (`/var/log/fermah-gpu0`, `/var/log/fermah-gpu1`, etc.):
 
 ```bash
+# Docker Compose
+docker compose logs fpn-gpu0 -f
+docker compose logs fpn-gpu1 -f
+
+# Systemd
 journalctl -u fermah-gpu0.service -f
 journalctl -u fermah-gpu1.service -f
 ```

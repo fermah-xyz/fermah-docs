@@ -106,17 +106,73 @@ sudo systemctl enable fermah.service
 sudo systemctl start fermah.service
 ```
 
-### Docker
+### Docker Compose
 
-<Callout type="error">
-Docker setup is under development.
+You can also run the prover node as a Docker container using Docker Compose.
+
+<Callout type="warning">
+This requires the NVIDIA Container Toolkit to be installed and configured. See [Install CUDA containers toolkit](/network/mainnet/installation#install-cuda-containers-toolkit-for-rootless-docker).
 </Callout>
 
-### Kubernetes
+#### Container Image
 
-<Callout type="error">
-Kubernetes helm chart is under development.
+Build a minimal container image for the prover node:
+
+```dockerfile
+FROM nvidia/cuda:12.9.1-runtime-ubuntu24.04
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates tini && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV HOME=/root
+WORKDIR /root
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/root/.fermah/bin/fpn"]
+```
+
+```bash
+docker build -t fermah-fpn:24.04 .
+```
+
+<Callout type="info">
+Replace the base image with `nvidia/cuda:12.2.0-runtime-ubuntu22.04` if you are running CUDA 12.2.
 </Callout>
+
+#### docker-compose.yml
+
+```yaml
+services:
+  fpn:
+    image: fermah-fpn:24.04
+    restart: unless-stopped
+    environment:
+      NVIDIA_VISIBLE_DEVICES: 0
+    volumes:
+      - /home/fermah/.fermah:/root/.fermah:rw
+      - /var/log/fermah:/var/log/fermah:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - fermah-net
+
+networks:
+  fermah-net:
+    external: true
+```
+
+Create the network and start:
+
+```bash
+docker network create fermah-net
+docker compose up -d
+```
 
 ## Headless Password
 
