@@ -242,7 +242,7 @@ service:
 
 ## Prover Node Configuration
 
-The telemetry settings in `~/.fermah/config/prover-node-config.toml` should point to the local collector:
+The telemetry settings in `~/.fermah/config/prover-node-config.toml`:
 
 ```toml
 [telemetry]
@@ -252,10 +252,6 @@ level = "info"
 filters = []
 interval = 30
 temporality = "Cumulative"
-
-[telemetry.export]
-endpoint = "http://localhost:4317/"
-timeout = "3s"
 ```
 
 <Callout type="warning">
