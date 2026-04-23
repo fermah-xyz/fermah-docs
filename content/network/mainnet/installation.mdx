@@ -75,7 +75,7 @@ sudo apt-get install -y cuda-drivers cuda-toolkit-12-2
 wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
 rm cuda-keyring_1.1-1_all.deb
-sudo apt-get install -y cuda-drivers cuda-toolkit-12-9
+sudo apt-get install -y nvidia-open cuda-toolkit-12-9
 ```
 
 <Callout type="info">
@@ -126,10 +126,6 @@ bash <(curl -s https://storage.googleapis.com/fermah-mainnet-releases/install.sh
 Script will run in interactive mode by default. You may pass in `--help` to see what arguments are available.
 
 Then you need to run `fpn` as a daemon. We recommend using `systemd` (see [Starting a Node](/network/mainnet/starting-a-node) for more details).
-
-<Callout type="error">
-We recommend verifying the script first through GPG verification, check [GPG](/network/resources/gpg).
-</Callout>
 
 ---
 
