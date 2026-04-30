@@ -22,8 +22,7 @@ export default async function DocsLayout({
           <Navbar
             logo={
               <span className="flex items-center gap-2">
-                <Image src="/logo.svg" alt="Fermah" width={24} height={24} />
-                <span className="text-lg font-semibold">Fermah</span>
+                <Image src="/images/fermah-froben-logo.svg" alt="Fermah Froben" width={180} height={19} />
                 <span className="text-sm font-normal text-gray-500 dark:text-gray-400">Docs</span>
               </span>
             }

@@ -26,9 +26,9 @@ type ProductGroup = {
 
 const productGroups: ProductGroup[] = [
   {
-    name: "ZK Proof Market",
+    name: "Fermah Froben",
     description:
-      "The universal proof market for cheap, fast, and reliable zero-knowledge proof generation.",
+      "The universal proof marketplace for cheap, fast, and reliable zero-knowledge proof generation.",
     icon: "ph:shield-check-duotone",
     accentColor: "#06c19d",
     statusUrl: "https://status.fermah.xyz/badge?theme=dark",

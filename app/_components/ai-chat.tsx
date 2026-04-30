@@ -92,7 +92,7 @@ export function AiChat() {
           >
             <Icon icon="ph:sparkle-duotone" width={32} style={{ color: '#5eead4' }} />
             <p style={{ fontSize: '0.85rem', color: '#a2b4c1', lineHeight: 1.5 }}>
-              Get instant answers about Fermah&apos;s proof market, node setup, and architecture.
+              Get instant answers about Fermah Froben, node setup, and architecture.
             </p>
             <a
               href="https://claude.ai"

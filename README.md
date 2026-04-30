@@ -25,7 +25,7 @@ This is a multi-product documentation site built with [Nextra 4](https://nextra.
 
 | Product | Status | Path |
 |---------|--------|------|
-| **ZK Proof Market** | Live | `/network/` |
+| **Fermah Froben** | Live | `/network/` |
 | **Flashcast Social** | Coming soon | `/flashcast/` |
 | **Marina** | Coming soon | `/marina/` |
 
@@ -93,7 +93,7 @@ fermah-docs/
 │       ├── layout.tsx          # Nextra theme layout
 │       └── page.tsx            # MDX page renderer
 ├── content/
-│   └── network/                # ZK Proof Market docs
+│   └── network/                # Fermah Froben docs
 │       ├── _meta.ts            # Sidebar configuration
 │       ├── index.mdx           # Product overview
 │       ├── introduction/       # Intro section
