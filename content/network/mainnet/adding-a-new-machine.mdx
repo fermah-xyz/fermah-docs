@@ -7,11 +7,7 @@ import { Callout } from 'nextra/components'
 
 # Adding a New Machine
 
-If you need to add a new machine to your <GlossaryTooltip>Prover Node</GlossaryTooltip> setup, the process depends on whether the new machine has the same hardware specifications as your current one.
-
-## Same Hardware Specifications
-
-If the new machine has **identical hardware specs** to your existing one, you only need to generate a new machine secret:
+To add a new machine to your <GlossaryTooltip>Prover Node</GlossaryTooltip> setup, generate a new machine secret on the new machine:
 
 ```bash
 prover-node gen-machine-secret
@@ -22,13 +18,3 @@ This generates a new Machine Secret Key and updates the configuration file accor
 <Callout type="info">
 Make sure you have already imported your ECDSA private key on the new machine before running this command. See [Machine Secret](/network/mainnet/machine-secret) for details.
 </Callout>
-
-## Different Hardware Specifications
-
-If the new machine has **different hardware specifications** (e.g., different GPU model, RAM, CPU, or storage), you will need a new configuration file that reflects the updated resources.
-
-<Callout type="warning">
-Please reach out through our [support channels](/network/resources/support) with your new machine's hardware details to receive an updated configuration file.
-</Callout>
-
-Once you receive the new configuration, you can run the onboarding step of the [install script](/network/mainnet/installation#install-the-fermah-prover-node) to set up the new machine.
