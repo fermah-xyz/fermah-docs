@@ -17,8 +17,8 @@ We need to modify the maximum open files and unix socket buffers to increase the
 ### Open Files
 
 ```bash
-sudo echo "fermah	soft	nofile	65535" >> /etc/security/limits.conf
-sudo echo "fermah	hard	nofile	65535" >> /etc/security/limits.conf
+echo "fermah	soft	nofile	65535" | sudo tee -a /etc/security/limits.conf
+echo "fermah	hard	nofile	65535" | sudo tee -a /etc/security/limits.conf
 ```
 
 ### Unix Socket Buffers
