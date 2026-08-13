@@ -1,0 +1,200 @@
+---
+title: "The shape of the system"
+---
+
+# The shape of the system
+
+One process, one Postgres, one chain connection, and a set of background workers that each own one job. This chapter is the map: what the pieces are, what talks to what, and why the boundaries fall where they do.
+
+## The daemon
+
+```
+    ┌─────────────────────────────────────┐
+    │       fermah-pay-server (1 proc)    │
+    │       one Tokio runtime, one pool   │
+    └────┬────────┬──────────┬────────┬───┘
+         │        │          │        │
+    ┌────┴──┐ ┌───┴────┐ ┌──┴───┐ ┌──┴────────┐ ┌──────────┐
+    │ HTTP  │ │ gRPC   │ │WORK- │ │ CHAIN     │ │ OPERATOR │
+    │/health│ │9 svcs  │ │ERS   │ │ OBSERVERS │ │ PLANE    │
+    │/ready │ │typed   │ │(below│ │ (below)   │ │(loopback)│
+    └───────┘ │SDK     │ └──┬───┘ └─────┬─────┘ └────┬─────┘
+              └───┬────┘    │           │             │
+                  └────┬────┘───────────┘─────────────┘
+              ┌────────┴────────────────┘
+              │
+         ┌────┴──────────────────────┐
+         │        POSTGRES           │
+         │  auth schema + gateway    │
+         │  schema (queues, ledgers, │
+         │  audit)                   │
+         └────────────┬──────────────┘
+                      │
+         ┌────────────┴──────────────┐
+         │     STELLAR (the chain)   │
+         │   SAC USDC · billing ·    │
+         │   markets                 │
+         └───────────────────────────┘
+```
+
+One process rather than a service per concern, and the reason is transactional. A charge debits a balance, inserts a row, and writes an idempotency record; the money invariant is that those three either all happen or none do. Inside one process with one connection pool that is a single Postgres transaction. Split across services it becomes a distributed commit, which is a much harder problem bought for no benefit at these volumes.
+
+The cost is honest: a panic anywhere takes the whole daemon down. What makes that acceptable is that every worker is restart-safe by construction, so a process that dies mid-flight resumes from durable state rather than from memory. The rest of this chapter is largely about how.
+
+There is no message broker. Every queue is a Postgres table drained with `SELECT … FOR UPDATE SKIP LOCKED`, which means a worker claiming work and the state change that work produces commit together. Adding a broker would split that commit across two systems.
+
+## The workers
+
+Twelve long-lived tasks. Four move money, one observes the chain, and the rest reconcile, expire, or watch.
+
+```
+    MONEY MOVERS                                tick    batch  single-writer?
+    ├── funding          deposits → chain       2s      16     no
+    ├── settlement       charges → charge_batch 2s      50     no
+    ├── subscription     due subs → charge      60s     16     no
+    └── relay broadcast  relays → chain         2s      16     yes (RLYSUBMT)
+
+    CHAIN OBSERVER                          (poll-driven, no tick)
+    ├── billing monitor  Credit / Charge / ChargeFailed       yes (CHAINMON)
+
+    SAFETY NETS
+    ├── recovery         resolves crashed in-flight   30s     no
+    ├── reconciler       chain vs DB, 3 regimes       60s  50  yes (TREASOPS)
+    ├── relay job drainer permissionless claims        10s  25  yes (RLYJOBDR)
+    ├── relay expiry     terminates dead auths         60s 100  yes (RLYEXPTR)
+    ├── gas monitor      signer balances + halt       300s     no
+    └── idempotency sweep deletes expired keys       3600s     yes (IDEMSWEP)
+
+    DELIVERY
+    └── webhook delivery outbox → customer HTTP       1s   32  no
+```
+
+Seven of those hold a Postgres advisory lock, each with a distinct id, and the distinctness is load-bearing rather than cosmetic: two workers sharing an id would send one of them to permanent silent standby. There are more short-lived loops besides these, refreshing rate-limit overrides, garbage-collecting in-memory buckets, and flushing the audit-log buffer, but they carry no money and hold no durable state.
+
+The cadences are not arbitrary. The money movers tick at two seconds because a customer is waiting on the other side of that latency. The gas monitor ticks at five minutes because a fee account balance moves slowly and every tick spends RPC budget the chain observers share. The reconciler ticks at a minute but paces its own chain reads, because it is a safety net rather than a hot path.
+
+Leadership is a load control on a shared RPC budget, not the correctness mechanism. `FOR UPDATE SKIP LOCKED`, the claim leases and the state compare-and-swap are what make concurrent workers safe, and those hold with or without leadership. The one exception is the chain observer, where single-writer really is a correctness requirement, because it writes a cursor that must have exactly one writer.
+
+## What the workers actually do
+
+Each money path is a worker draining a Postgres queue and pushing transactions at the chain. This chapter walks the three that move money, phase by phase, because the phase boundaries *are* the crash safety and they are the part worth reading closely.
+
+The shape they share:
+
+```
+    CLAIM ────► PREPARE ────► ANCHOR ────► BROADCAST ────► ACCOUNT
+    (tx)        (no tx)       (tx)         (no tx)         (tx)
+
+    FOR UPDATE  fill + sign   persist the  send it to      settle the
+    SKIP LOCKED WITHOUT       hash and     the network     ledger, flip
+    + a lease   sending       COMMIT                       the status
+```
+
+No database transaction is held open across a chain call or a signing operation. That is not tidiness: a transaction spanning an RPC round trip holds row locks for as long as the network takes, and a slow provider becomes a stalled queue. So the work is cut into phases at exactly the points where a durable commit is needed, and the phases with no transaction are the ones that touch the outside world.
+
+## Funding: getting USDC in
+
+```
+    claim a pending row ──────────────────────────────── tx 1
+    │
+    ├── read nonce status on-chain (getLedgerEntries)
+    │       nonce consumed + a hash we stored?  ──► converge from receipt
+    │       nonce consumed + NO hash?           ──► operator alert
+    │                                               (an authorisation
+    │                                                spent by someone
+    │                                                else; we must not
+    │                                                invent a deposit
+    │                                                hash to credit)
+    │
+    prepare fee-bump tx (fill + sign, no send)
+    │
+    persist deposit_tx_hash, COMMIT, row still 'pending' ── tx 2
+    │                                           ◄── THE CRASH WINDOW CLOSES HERE
+    broadcast ──► then call credit(account, amount, txHash)
+    │
+    status = 'settled' ──────────────────────────────── tx 3
+```
+
+Two operations land on-chain per funding, and they are different in kind. The first is the SAC `transfer` that moves the user's USDC into the billing contract's address (the contract holds SAC USDC directly — no separate treasury EOA). The second calls `credit` on the billing contract, which records the deposit on the prepaid ledger, keyed by the first transaction's hash, which is what makes the credit deduplicable.
+
+The crash window is the interesting part. Killed before the hash is committed, the next tick reads the nonce status via `getLedgerEntries` and finds the nonce unconsumed, so nothing landed and it re-prepares safely. Killed after the commit but before broadcasting, the next tick finds a hash it can look up. Killed after broadcasting, the nonce is consumed and the hash is there, so it converges from the receipt instead of sending again. There is no ordering in which it broadcasts twice.
+
+The one branch that pages a human is a consumed nonce with no stored hash. It means the authorisation was spent by something that is not this gateway, and the honest response is to refuse to guess: crediting requires a deposit hash, and inventing one would corrupt the on-chain ledger with a credit that names a transfer nobody can verify.
+
+## Settlement: charges to the chain, in batches
+
+```
+    claim up to N authorized rows ──────────────────── tx 1
+         WHERE status='authorized'
+         AND claimed_at IS NULL
+         AND tx_hash IS NULL      ◄── a row that already has a hash is
+         ORDER BY created_at           NOT re-claimable, which is what
+         FOR UPDATE SKIP LOCKED        stops a second submission
+
+    charge_batch(accounts[], amounts[], chargeIds[])    one tx, 50 per tick
+    │                                                   (contract ceiling: 100)
+    │
+    record tx_hash on all N rows ──────────────────── tx 2
+    │
+    │   status stays 'authorized'. The OBSERVER promotes it,
+    │   because the observer read the chain and this worker only
+    │   knows what it sent.
+    │
+    (the chain emits per-entry Charge or ChargeFailed)
+```
+
+This path submits before it records, which is the opposite of funding, and that asymmetry is deliberate. A charge carries no user signature, so re-attempting one is not a money hazard the way re-sending a signed authorisation would be. What makes it safe is on-chain: a charge identifier is consumable exactly once, so a resubmitted batch skips the entries that already landed rather than double-debiting.
+
+Note what the worker does *not* do: it never marks a charge settled. It records the hash and stops. Promotion to `settled` belongs to the observer, because the observer read the chain, whereas this worker only knows what it sent. A worker that marked its own submissions settled would be reporting its intent as fact.
+
+Retries are finite. After five transient attempts the charge is marked failed and the cached balance restored, both in one transaction, so a charge the gateway gives up on does not silently keep the user's money debited.
+
+## The relay: four phases, and a lease
+
+The relay path carries a user's signed authorisation and spends Fermah's fees, so it is the most carefully staged.
+
+```
+    Phase 1 (tx)     claim under a LEASE, read nonce status,
+                     converge or rebroadcast an existing anchor,
+                     dispatch early terminals, COMMIT before any RPC
+
+    Phase 2a (no tx) reserve a nonce from the durable journal,
+                     fill, sign. No send.
+
+    Phase 2b (ONE tx) ATOMIC INSTALL: the signed envelope AND this
+                      relay's anchor commit together, both guarded on
+                      the live claim
+
+    Phase 3 (no tx)  broadcast the installed envelope
+    │
+    └────────► account the fees through a disposition CAS
+```
+
+The lease matters because leadership is not the safety mechanism. A claim is held under a token with an expiry, so a worker that dies holding a row does not strand it: the lease lapses and a new token reclaims it. That is what lets the queue tolerate a process disappearing between phases.
+
+Phase 2b is the one to understand. The signed transaction bytes and the row's pointer to them commit in a single transaction, so a crash between installing and broadcasting recovers by rebroadcasting *those exact bytes*. That is stronger than re-preparing, and the reason is subtle: a receipt lookup returning "not found" does not prove the first transaction cannot still land. Preparing a second one would put two transactions on the chain for one entitlement. Rebroadcasting the same bytes cannot, because it is the same transaction.
+
+Fee accounting is exactly-once by riding a state transition. The settle is a blind accumulator with no per-relay key, so it cannot be idempotent by itself; instead it is gated on the status flip, and only the tick that wins the flip settles. A settle failure rolls the flip back, so the row re-ticks and converges rather than losing the accounting.
+
+The directions are asymmetric on purpose. A reverted transaction **settles** the actual fees burned, because the fees were genuinely spent even though the bet failed. A pre-broadcast failure **releases** the reservation, because nothing was spent. Getting that backwards either leaks budget or charges for work never done.
+
+## Where the queues meet the safety nets
+
+```
+    pending_credits ──► funding ──────┐
+    charges ────────────► settlement ─┤
+    subscriptions ──────► scheduler  ─┼──► chain ──► observers ──► state
+    pending_relay ──────► relay ──────┘                │
+    relay_bot_job ──────► drainer ─────┘               │
+                                                      ▼
+    recovery ◄── resolves rows stuck mid-flight    webhook outbox
+    reconciler ◄── compares state against chain       │
+    expiry ◄── terminates dead auths                  ▼
+    gas monitor ◄── watches the wallet, halts     customer HTTP
+```
+
+The recovery worker exists because a claimed row with no result is invisible to the claim query that would retry it: the claim filters on `claimed_at IS NULL`, so a row whose owner died holding it would sit forever. Recovery finds those past a grace window and resolves each by receipt, which is why the grace period has to exceed the worker's own receipt timeout plus its tick, or recovery would race a worker that is still legitimately waiting.
+
+The expiry worker handles a hazard specific to signed authorisations: one can die of old age while queued. A row whose validity window has passed can never succeed, so retrying it burns fees forever. Terminalizing it releases the reservation and tells the product, once.
+
+The gas monitor is the only worker whose job is to stop the others. It reads the fee account's XLM balance on a long interval and compares unreserved headroom against a floor, and below the critical floor it writes a durable halt that closes admission. It deliberately does not touch the operator's own pause switch, and it deliberately does not stop the broadcast worker, because rows already holding signed authorisations and reserved fees represent committed liability. Draining that queue is what *returns* headroom; freezing it would strand the authorisations until they expire.

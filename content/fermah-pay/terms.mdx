@@ -1,0 +1,49 @@
+---
+title: "Terms"
+---
+
+# Terms
+
+Every term this book uses, in the sense it uses them. No blockchain background is assumed beyond a shared public ledger that costs money to write to.
+
+**Authorisation entry.** In this book, a Soroban authorisation entry (CAP-0046-11): a signed message covering a specific contract invocation — the contract address, function name, every argument, a nonce, and a signature expiration ledger. Producing one is free and needs no XLM, because it never touches the chain.
+
+**aBFT.** Asynchronous Byzantine Fault Tolerance. Stellar's consensus protocol. A closed ledger is final — it will not be discarded and replaced. There are no reorgs.
+
+**Fee-bump transaction.** A Stellar protocol primitive that wraps an inner transaction inside an outer envelope. The outer envelope's `fee_source` pays the fee. The inner transaction's operations execute as signed. No smart-contract infrastructure needed.
+
+**Confirmation.** On Stellar, immediate. A transaction included in a closed ledger is final. There is no confirmation-depth wait, no provisional period, and no risk of the ledger being replaced.
+
+**Custody.** Holding someone else's funds. The prepaid arrangement is custodial after the deposit, since the USDC is in the billing contract. The direct arrangement is not, at any point.
+
+**Expiration ledger.** The ledger sequence at which a SAC allowance or a Soroban authorisation entry expires. After this ledger, the allowance is invalid and `transfer_from` calls against it revert. Enforced by the protocol, not by application code.
+
+**Fee.** The cost the Stellar network charges to process a transaction, paid in XLM. The reason holding only USDC is holding something you cannot spend.
+
+**getLedgerEntries.** Soroban RPC method for reading on-chain state — contract data, nonce records, account balances — without submitting a transaction.
+
+**getEvents.** Soroban RPC method for reading contract events from closed ledgers. Filtered by contract address and event topic.
+
+**Idempotency key.** A caller-supplied value that marks a request as the same one on a retry. The gateway returns the first response's bytes for a matching repeat, for 24 hours.
+
+**Ledger sequence.** Stellar's equivalent of a block number. Ledgers close every ~5 seconds. Each is final.
+
+**Nonce.** In a Soroban authorisation entry, a unique value recorded on-chain as TEMPORARY contract data when the authorisation is consumed. Prevents replay. Garbage-collected by the ledger after TTL expiry.
+
+**Reconciliation.** Comparing what the gateway believes against what the chain says, continuously, and either repairing the difference or paging a human.
+
+**require_auth.** Soroban's authorisation primitive. A contract function that calls `require_auth(address)` requires the transaction to carry a valid signed authorisation entry from that address, covering the exact invocation.
+
+**SAC.** Stellar Asset Contract. The Soroban interface for Stellar's native assets, including USDC. Exposes `transfer`, `approve`, `transfer_from`, `balance`, and other functions as Soroban contract calls.
+
+**Soroban.** Stellar's smart contract platform. Contracts are written in Rust, compiled to Wasm, and deployed on the Stellar ledger.
+
+**Tenant.** One end-user account inside a product, as the gateway sees it. A prepaid balance belongs to one.
+
+**Treasury.** On this system, the billing contract itself holds deposited USDC via the SAC. Distinct from the fee account, which pays XLM for transaction fees.
+
+**USDC.** A token redeemable one-for-one for US dollars, issued by Circle. Seven decimals on Stellar. The currency this system moves.
+
+**Webhook.** An HTTP request the gateway sends a product to report something that happened after the original request was answered. Signed, because an unsigned webhook is an anonymous HTTP request until something makes it otherwise.
+
+**XLM.** Stellar's native currency. Transaction fees are paid in XLM. Users of Fermah Pay never hold or spend XLM — the operator pays fees via fee-bump transactions.

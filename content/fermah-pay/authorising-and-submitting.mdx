@@ -1,0 +1,103 @@
+---
+title: "Authorising and submitting are different acts"
+---
+
+# Authorising and submitting are different acts
+
+Everything in Fermah Pay follows from one split. Authorising a payment and submitting it to the blockchain are separate acts, and different parties can perform them.
+
+The user authorises. Fermah submits. Authorising produces a signed message, which is free, needs no XLM, and touches no ledger. Submitting is a transaction that costs fees, and Fermah pays it.
+
+The mechanism is Soroban authorization entries, defined in CAP-0046-11. It is not a Fermah invention and not a workaround: it exists in the Stellar protocol precisely so that the party who owns the funds and the party who pays for the transaction can be different.
+
+## How Soroban authorisation works
+
+A Soroban contract function that moves a user's funds calls `require_auth(user)`. The Stellar protocol requires that the transaction carry an authorisation entry signed by the user's key, covering the exact invocation: the contract address, the function name, and every argument. No XLM is needed from the user. The transaction's fee-payer is whoever submits it.
+
+This is structurally different from the EVM model in two ways that matter. First, the authorisation entry covers the full invocation tree — not just `from`, `to`, `value`, but the specific contract call and its arguments. If the contract function takes a slippage parameter, that parameter is inside the signed entry. The submitter cannot change it. Second, fee-bump transactions are a protocol-level primitive on Stellar: the operator wraps the user's signed transaction in a fee-bump envelope and pays the fee without any smart-contract infrastructure. No paymaster contract, no bundler, no entry-point contract.
+
+## What the user signs
+
+The user's wallet signs a Soroban authorisation entry. This is the whole of it:
+
+```
+SorobanAuthorizationEntry {
+    credentials: SorobanCredentials::Address {
+        address:                    // the user's Stellar address
+        nonce:                      // unique, prevents replay
+        signature_expiration_ledger // entry dies after this ledger
+        signature                   // ed25519 over the entry
+    }
+    root_invocation: {
+        contract_id:                // the target contract
+        function_name:              // the function being called
+        args:                       // every argument, bound
+        sub_invocations:            // nested calls, also bound
+    }
+}
+```
+
+The signature covers the entire invocation tree. Producing it happens inside the wallet: it costs nothing, requires no XLM, and does not reach the chain. The wallet might be Freighter, Albedo, a mobile wallet, or an embedded wallet created at sign-up that they operate by logging in.
+
+The nonce is unique per authorisation. Stellar records consumed nonces as TEMPORARY contract data entries, which the ledger garbage-collects after their TTL expires. A nonce that has been consumed cannot be reused, and the `signature_expiration_ledger` bounds how long an unconsumed authorisation remains valid.
+
+## Why Fermah cannot alter it
+
+A signature covers a specific sequence of bytes. Change one and the signature no longer corresponds to the message, and there is no way to edit a signed statement into a different valid one without the private key.
+
+Holding a signed authorisation entry, Fermah has two options: submit it as signed, or do nothing. It cannot change the contract address, the function name, or any argument. It cannot extend `signature_expiration_ledger` or replay a consumed nonce. That is not a restraint Fermah's code imposes on itself, which is the important part. Soroban's runtime verifies the signature against the authorisation entry and checks the nonce against its own on-chain storage. Fermah's software being wrong does not weaken any of it.
+
+## One payment, end to end
+
+```
+    USER                        FERMAH PAY                  STELLAR
+
+    |                           |                           |
+    |  1. signs Soroban auth    |                           |
+    |     entry (free, off-     |                           |
+    |     chain)                |                           |
+    |-------------------------->|                           |
+    |                           | 2. verify auth entry,     |
+    |                           |    destination, window,   |
+    |                           |    spend limits           |
+    |  3. immediate             |                           |
+    |     acknowledgement       |                           |
+    |<--------------------------|                           |
+    |                           |  4. wraps in fee-bump tx  |
+    |                           |     + submits             |
+    |                           |-------------------------->|
+    |                           |                           | 5. Soroban
+    |                           |                           |    verifies
+    |                           |                           |    auth entry,
+    |                           |                           |    checks nonce,
+    |                           |                           |    moves the
+    |                           |                           |    funds
+    |                           |  6. observes the result   |
+    |                           |<--------------------------|
+    |  7. signed webhook to the |                           |
+    |     product               |                           |
+    |<--------------------------|                           |
+    |                           |                           |
+```
+
+Step 2 is Fermah's own work, and it happens before a unit of Fermah's fees is committed. The gateway reads the address from the authorisation entry's credentials and requires it to equal the claimed `from`, so a forged or mistyped request never reaches the chain at Fermah's expense. It requires the signed contract address to be one it already trusts. It requires the remaining validity window to leave enough time for the transaction to land, and refuses a window wider than one hour, so an authorisation cannot be collected now and parked for later. On the funding path it also requires `from` to equal the wallet already linked to that account, so a product holding valid credentials cannot attribute somebody else's signed authorisation to an account of its choosing. And it charges the request against the fee budget in [what the system cannot do](/fermah-pay/what-the-system-cannot-do#fermahs-own-spending-is-bounded). A request failing any of these is refused with nothing reserved.
+
+Step 3 is why the product feels responsive. The caller is acknowledged once the request is validated and durably recorded, not once the chain confirms. Confirmation takes five to six seconds on Stellar, and a user waiting on every one of them feels every one of them, so the gateway writes down a durable intent, answers, and submits in the background.
+
+Steps 6 and 7 are the price of that choice. Because the answer came early, the authoritative result has to arrive later, so the gateway watches the chain for the resulting ledger entry and notifies the product when the outcome is known. The notification carries an HMAC-SHA256 signature over the timestamp and the raw body, because a webhook is an anonymous HTTP request until something makes it otherwise.
+
+## Fermah pays the fees, and that has to be bounded
+
+Fees come from a Stellar account Fermah funds and controls. The fee-bump transaction wraps the user's signed operations inside an outer envelope whose `fee_source` is the operator's account, so the fee is charged to Fermah, not the user. On the direct-payment path nothing reimburses it on-chain. It is a cost of running the product.
+
+Which makes the third problem from the last chapter live, so it is bounded in two places. Every request that will cost fees is charged against a daily budget before submission, keyed to the address in the authorisation entry, and the reservation is a single conditional UPSERT that checks and debits inside one statement, serialised by Postgres on the ledger row. That matters under concurrency: N simultaneous requests from one signer cannot all pass a budget that fits one of them, which is exactly what a check followed by a separate debit would allow. Separately, the fee account has a floor measured against unreserved headroom, and when it is breached the gateway stops admitting new work and does not resume on its own. Both are in [what the system cannot do](/fermah-pay/what-the-system-cannot-do#fermahs-own-spending-is-bounded).
+
+## What the user ends up holding
+
+That depends on which arrangement the product uses, and the difference is not cosmetic.
+
+In the prepaid arrangement the user's USDC moves once into a contract Fermah operates, and an on-chain ledger credits their account, after which the product draws that balance down as the user consumes paid work. The user holds a claim on a balance.
+
+In the direct arrangement the USDC moves straight to the contract the user is transacting with, a prediction market for instance, and what they end up holding is whatever that contract gave them, a position or an entitlement. Fermah never holds the funds on that path, not for a single ledger close.
+
+Both are the next chapter.

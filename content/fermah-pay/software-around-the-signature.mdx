@@ -1,0 +1,76 @@
+---
+title: "The software around the signature"
+---
+
+# The software around the signature
+
+The mechanism in the last two chapters is a few paragraphs long. Almost all of the engineering is in the system built around it, and none of it is cryptographic.
+
+The reason is that the mechanism is synchronous and the chain is not. A user signs, the gateway answers in milliseconds, and the chain confirms seconds later. Every piece of the system exists to keep those two clocks consistent, and to make sure a crash, a duplicate request, or a dropped connection does not leave money and the record of money disagreeing.
+
+## One gateway, several products
+
+Fermah Pay runs as its own service. Products consume it over gRPC through a typed Rust SDK, with the `.proto` files as the single source of truth for the wire contract, so a product creates a charge or relays a bet without touching Soroban transaction construction, fee-bump wrapping, nonce management, batching, retries or chain observation. There is no REST surface.
+
+That means several products share one deployment, one fee account and one Postgres instance, which makes isolation a correctness property rather than a nicety. An API key resolves server-side to a `(product_id, environment)` pair taken from the key's own database row, never from the request body, and every query that reads product data carries that pair in its `WHERE` clause. Reaching for another product's resource returns the same uniform `NotFound` an unknown identifier would, because a `PermissionDenied` would itself confirm the resource exists.
+
+The SDK is the second reason products adopt this rather than building their own. It injects credentials, classifies a `tonic::Status` into a typed error once, retries only what it can identify as transport-transient, and mints the idempotency key **outside** the retry loop so every attempt carries the same one. A retry therefore cannot become a second charge.
+
+## Live money and test money never share a process
+
+Every product needs somewhere to develop without spending real dollars, and the usual way to provide it is a flag on the request or a column in the database. Both put live and test money one bug away from each other.
+
+Here the data separation is structural. An API key's prefix declares its tier, `fpk_live_` or `fpk_test_`, and a daemon process serves exactly one tier, fixed by its config. The live process holds live rows, the test process holds test ones, and a production deployment runs both against one Postgres. Nothing in a request crosses that boundary, because the tier is a property of which process received it.
+
+The signing keys are separated differently, and the difference matters enough to state rather than blur. Each tier has its own signing key, and what stops a test process from using a live key is the deployment configuration. The application performs no such check and could not: a daemon handed the other tier's key would sign with it. So that half of the guarantee is a deployment property to configure and verify, not a line of code to read.
+
+## Settlement happens after the answer
+
+A charge returns to the caller before it reaches the chain, which is what makes this feel like a payments API rather than a blockchain application. Inside one Postgres transaction the handler takes `SELECT … FOR UPDATE` on the account's balance row, debits it, inserts the charge as `authorized`, writes the idempotency record, and commits. A worker picks the row up on its next tick and batches it into a single `charge_batch` call so one transaction's overhead amortises across up to fifty charges.
+
+So for a window, Postgres says a charge happened and the chain has not heard of it. That window is where the failure modes live, and they are all the same shape: something interrupts the sequence between the answer and the confirmation.
+
+The answer to all of them is that the chain is the truth and the cache converges toward it. A worker claims rows with `FOR UPDATE SKIP LOCKED`, submits, records the transaction hash, and the **chain observer** is what flips a charge to `settled`, because the observer reads the chain rather than trusting the submission. When the contract skips an entry, the observer sees the failure event and credits the balance back in the same transaction that records the rejection, so there is no state where the money was taken and the record says otherwise.
+
+Crash safety comes from ordering, and the ordering differs by path in a way worth being exact about. On the paths that carry a user's signed authorisation, funding and the relay, the transaction is filled and signed without broadcasting, its hash is persisted and committed while the row is still `pending`, and only then is it broadcast. A process killed between the commit and the broadcast returns to a hash it can look up; one killed before the commit finds the nonce unused on-chain and can safely re-prepare. The durable record precedes the irreversible act, so neither ordering broadcasts twice.
+
+Charge settlement, which carries no user signature, submits first and records the hash after. A crash there leaves a claimed row with no hash, and a recovery worker resolves it by receipt: submitted and successful, the observer settles it; reverted, the row returns to the queue with its retry count bumped; absent, it waits another tick. What makes that safe rather than merely likely is on-chain, where a charge identifier is consumable once, so resubmitting a batch that already landed skips rather than double-debits. Retries are finite: after five transient attempts the charge is marked failed and the cached balance restored in one transaction.
+
+## Watching the chain
+
+The gateway learns what happened by polling the chain for events, which on Stellar is simpler than it sounds.
+
+Stellar's consensus is aBFT. There are no reorgs. A ledger that has been closed is final. This eliminates the hardest part of chain observation on EVM: the confirmation-depth gate, the parent-hash ring for detecting reorganisations, the buffer that holds unconfirmed events, and the dedup logic across the historical-scan and live-subscription handoff.
+
+What remains: the gateway polls for contract events using `getEvents` from the Soroban RPC endpoint, filtered by contract address and event topic. It records the last ledger sequence it processed, and each poll starts from `lastLedger + 1`. A gap — a dropped connection, a restart, a rate-limited provider — becomes a durable row rather than an absence nobody notices, and a scan closes it by re-reading those ledgers with `getEvents`. Applying twice is prevented by identity: every applied event is recorded by its `(ledger_sequence, tx_hash, event_index)`, so a re-application finds the row and does nothing.
+
+Only one process observes the chain at a time, elected by a Postgres advisory lock, because the observer writes a cursor that must have a single writer. The others run in standby ready to take over. A leader-elected worker starts in a `NotYetLeader` state that is healthy *without* a heartbeat, because a legitimate standby replica never ticks; it flips to leading when it wins the lock, which is what makes a hung leader detectable. Get either half wrong and you either drain every follower from the load balancer or report a wedged leader as healthy forever.
+
+Two observers run against the chain, and they are shaped differently for a concrete reason. The billing monitor filters on one contract address, because there is exactly one billing contract. The relay's settlement observer cannot: purchase logs come from many market contracts, a distinct address per market, and a market created after startup must not be structurally invisible. So it watches by event signature with no address filter and moves the trust check into the handler, where an untrusted address is dropped. That also means it has no single contract to key a cursor on, so it uses a synthetic partition tag rather than an address, and its own leader lock.
+
+## Comparing beliefs against the chain, continuously
+
+None of the above is trusted to be sufficient. A separate reconciler runs continuously and compares what the gateway believes against what the chain says, and what its three regimes are *permitted* to do differs in a way that is the point rather than an accident.
+
+```
+    regime              finds                           may it repair?
+    ─────────────────────────────────────────────────────────────────────
+    balance drift       cache != on-chain coins         NO: record + page
+    missed events       a log never applied             YES: via identity
+    phantom charge      on-chain charge, no DB record   NO, but it PAUSES
+                                                        the money movers
+```
+
+Balance drift is detect-only, and that looks like timidity until you see why. The on-chain SAC balance is an aggregate with no event identity attached. Writing it into the cache would double-credit a deposit still inside its settlement window: once by the aggregate write and again by the observer applying the event. Repair therefore belongs only to the paths that carry an event's identity and can therefore prove they have not already applied it.
+
+When it finds an event the observer never ingested, it applies it through exactly those identity-bearing paths, which both correct the state and re-emit the webhook the product never received. That coverage is contiguous across a seven-day window rather than a single batch, tracked by a persisted low-water mark, because a memoryless window would lose anything older than one batch.
+
+And when it finds a charge on-chain that the gateway has no record of authorising, it treats that as what it looks like, a compromised operator key rather than a bug. After a debounce window it writes a system-set emergency pause, halting the money movers while leaving detection running, because an operator working an incident needs to keep seeing divergences accumulate.
+
+## What the product is told
+
+Because answers come early, results arrive later, as webhooks. A webhook is an anonymous HTTP request until something makes it otherwise, so each delivery carries an `X-Fermah-Signature` header of `t=<unix>,v1=<hex>`, an HMAC-SHA256 over the timestamp and the raw body, and the SDK ships the verifier rather than leaving each consumer to write one. The timestamp is checked before the HMAC, which bounds how long a captured delivery can be replayed. During a secret rotation the header carries both the current and previous signatures, so a rotation does not drop deliveries.
+
+Delivery is durable by construction. The event row is written in the same Postgres transaction as the state change it describes, a transactional outbox, so there is no ordering in which the state moved and the event was lost. Delivery then retries with exponential backoff over an eight-attempt budget, and a dead-lettered event is still readable through a replay endpoint with a ninety-day window.
+
+The endpoint URL a product registers is validated against an SSRF blocklist covering IPv4 and IPv6 private ranges, link-local and loopback addresses, hostname strings and a port blocklist, because an unvalidated destination turns the gateway into a way to make requests against private infrastructure.

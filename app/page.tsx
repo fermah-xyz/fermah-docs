@@ -45,6 +45,18 @@ const productGroups: ProductGroup[] = [
     ],
   },
   {
+    name: "Fermah Pay",
+    description:
+      "Payments layer for products that need to charge users in USDC without asking them to hold gas, manage keys, or leave the app to acquire XLM.",
+    icon: "ph:credit-card-duotone",
+    accentColor: "#f59e0b",
+    statusUrl: "",
+    links: [
+      { label: "Documentation", href: "/fermah-pay" },
+    ],
+    resources: [],
+  },
+  {
     name: "Flashcast Social",
     description:
       "Decentralized social protocol powered by zero-knowledge proofs.",

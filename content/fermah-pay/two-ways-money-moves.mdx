@@ -1,0 +1,43 @@
+---
+title: "Two ways money moves"
+---
+
+# Two ways money moves
+
+The same Soroban authorisation mechanism supports two arrangements, and the difference between them is whether Fermah ever holds the user's USDC at all. Products pick one based on what they are charging for.
+
+## A prepaid balance, for many small charges
+
+Some products bill repeatedly for small amounts. A proving network charges per unit of work consumed, and a user might trigger hundreds of those in an hour. Putting each one on-chain individually would be slow and would cost fees every time, for amounts smaller than the fees.
+
+So the user funds once and the product draws it down. The user signs one authorisation, the gateway submits a fee-bump transaction that calls the SAC's `transfer` function to move the USDC into the billing contract, and then calls `credit` on the billing contract, which records the deposit against that account. The billing contract holds USDC directly via the SAC. It is a ledger of prepaid balances, keyed by account identifier.
+
+Charges after that carry no signature and need no user involvement, which is the point: the user authorised the funding, and the product is spending against a balance the user already gave it. Each charge debits a balance the gateway keeps in Postgres, returns immediately, and reaches the chain later, batched with others into a single `charge_batch` call so one transaction's overhead amortises across up to a hundred charges.
+
+That "later" is what makes the arrangement work and what makes it need care. The Postgres balance is a write-through cache and the chain is the truth, so the two can disagree for a window, and everything in [the software around the signature](/fermah-pay/software-around-the-signature) about reconciliation exists because of it. The invariant is that a charge accepted against the cache either settles on-chain or is credited back, and the credit-back happens in the same transaction that records the rejection, so there is no state where the money was taken and the record says otherwise.
+
+The user's funds are in a contract Fermah operates for this arrangement. That is custody, stated plainly, and it is the honest description of a prepaid balance. What bounds it is on-chain: the billing contract enforces a per-transaction maximum, a per-account daily maximum and a global daily maximum, none of which the gateway can exceed whatever it submits. The [contracts chapter](/fermah-pay/two-programs-on-the-blockchain#three-ceilings-the-operator-cannot-exceed) has the comparators.
+
+## A direct payment, where nothing is held
+
+The prediction-market product does not want a balance. A bet is one payment to one market contract, and the user wants shares back, so there is nothing to prepay.
+
+Here the signed authorisation targets the market contract's `buy` function directly. Fermah wraps it in a fee-bump transaction and submits. Inside `buy`, the market contract calls `token.transfer(user, market_address, amount)`, and because the user's auth entry covers the full invocation tree — including this sub-invocation — the Soroban runtime authorises the transfer without a separate approval. The position is credited to the user. Fermah's billing contract is not in the path, the gateway writes no balance row. A failed payment leaves nothing to unwind because nothing moved.
+
+This is the path where the second problem from [money you cannot move](/fermah-pay/money-you-cannot-move) becomes concrete. A bet has terms the transfer authorisation alone does not cover: which outcome, the minimum shares to accept, who gets the sponsor credit. Those terms are arguments to the market contract call, and because Soroban authorisation entries bind the entire invocation tree — contract address, function name, and every argument — they are all covered by the user's signature. The submitter cannot change them.
+
+On the EVM version of this system, binding the terms required a second signature over a separate typed-data struct and a nonce-sharing trick to make the two atomic. On Soroban, the invocation tree binding means a single authorisation entry covers both the fund movement and the application-level terms. One signature, not two.
+
+The result arrives asynchronously. The gateway watches for the market contract's own purchase log, reads the share count out of it, and delivers that to the product as a signed webhook. On failure the webhook carries a stable snake_case reason rather than a revert string, because the consuming product branches on it in code.
+
+## Recurring charges
+
+A third arrangement exists in the contracts and is worth describing precisely, because precision here is the difference between a fact and a claim.
+
+The design uses the SAC's `approve` function with `expiration_ledger`. A subscriber calls `approve` to grant the billing contract an allowance — a maximum amount the contract may `transfer_from` — that expires at a specific ledger sequence. The gateway then calls the billing contract's `charge_subscription` function on schedule, which calls `transfer_from` to pull USDC from the subscriber up to the approved amount.
+
+The subscriber signs one authorisation for the `approve` call. From then on the gateway charges on schedule without the subscriber re-signing. The contract checks: `amount <= approved_allowance` and `current_ledger <= expiration_ledger`. A charge after the allowance expires reverts.
+
+Two properties are worth noting. First, the allowance expires by construction. On EVM, an ERC-20 `approve` persists until explicitly revoked, which means a subscriber who forgets to cancel has granted standing authority forever. On Stellar, `expiration_ledger` kills the allowance at a known time. No revocation needed, no "infinite approve" risk, no standing authority outliving the subscription.
+
+Second, this is `transfer_from`, not a first-party transfer. The funds move from the subscriber's account to the billing contract when charged. Fermah's contract pulls them. This is a different trust model than the EVM version, where EIP-7702 delegation ran code inside the subscriber's own account — the executing contract *was* the subscriber — and the transfer was first-party. The Soroban model is structurally an allowance-based pull, bounded by the approved amount and the expiration ledger. It is simpler and safer by default, but it is not zero-custody at the point of pull — the billing contract holds the charged amount after pulling it.

@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 
-const productSlugs = ['network', 'sdk', 'api'] as const
+const productSlugs = ['network', 'fermah-pay', 'sdk', 'api'] as const
 
 export function ProductProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()

@@ -25,6 +25,11 @@
   --nextra-primary-saturation: 95%;
 }
 
+[data-product="fermah-pay"] {
+  --nextra-primary-hue: 38deg;
+  --nextra-primary-saturation: 92%;
+}
+
 [data-product="sdk"] {
   --nextra-primary-hue: 265deg;
   --nextra-primary-saturation: 70%;

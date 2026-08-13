@@ -1,0 +1,17 @@
+---
+title: "Overview"
+---
+
+# Fermah Pay — Stellar
+
+Fermah Pay is the payments layer underneath Fermah's products. A user pays in USDC, holds no XLM, signs one message, and pays no fees. Fermah submits the transaction and covers the cost.
+
+That sounds like a small thing until you try it. Moving a Stellar Asset Contract balance takes a transaction, a transaction costs fees, and fees are paid in XLM rather than in the token being moved. So a user holding a hundred USDC and nothing else holds money they cannot move. Every product that wants those users has to solve it, and most solve it by telling the user to go acquire XLM first, which is where most users leave.
+
+The mechanism is Soroban authorization entries, defined in CAP-0046-11. Circle's USDC on Stellar implements the Stellar Asset Contract natively, and the interesting part is not that it exists but what has to be built around it before it is safe to operate. This book covers both: what the user signs and why signing is free, why Fermah submits a fee-bump transaction rather than asking the user to submit, how a signature Fermah cannot alter becomes a transaction Fermah pays for, where the funds end up on each of the two money paths, what the contracts enforce, and what stops the operator from spending fees that are not its own.
+
+It is written for a technically literate reader with no prior exposure to this system. Where a standard or a term is needed it is named and explained, because a claim you cannot check is not worth much; every one of them is also in [terms](/fermah-pay/terms).
+
+Read it in order. [Money you cannot move](/fermah-pay/money-you-cannot-move) is the problem, and it is not the part people expect: paying a user's fees is easy, and paying it without acquiring authority over their funds or their payment's terms is not. [Authorising and submitting are different acts](/fermah-pay/authorising-and-submitting) is the mechanism, one payment followed end to end, and the chapter to read if you read one. From there [two ways money moves](/fermah-pay/two-ways-money-moves) covers the prepaid arrangement and the direct one, which differ in whether Fermah ever holds the funds at all, and [the software around the signature](/fermah-pay/software-around-the-signature) covers where most of the engineering actually went, none of it cryptographic. [The two programs on the blockchain](/fermah-pay/two-programs-on-the-blockchain) describes what each contract enforces and which one is live today, and [what the system cannot do](/fermah-pay/what-the-system-cannot-do) states the properties and names what enforces each.
+
+This document describes the architecture of Fermah Pay as designed for Stellar, ported from a system that runs in production on an EVM-compatible chain. Every behaviour described in the gateway, the workers, the reconciler, the webhooks, and the daemon structure is read from the running EVM code. Soroban contract designs are proven against their test suites but not yet deployed to Stellar. Where something is designed but not deployed, the book says which.
