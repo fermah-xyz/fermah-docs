@@ -9,10 +9,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js" alt="Next.js 16" />
-  <img src="https://img.shields.io/badge/Nextra-4-blue" alt="Nextra 4" />
-  <img src="https://img.shields.io/badge/bun-latest-f472b6?logo=bun" alt="Bun" />
-  <img src="https://img.shields.io/badge/Cloudflare%20Pages-deployed-orange?logo=cloudflare" alt="Cloudflare Pages" />
+  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js" alt="Next.js 16" /></a>
+  <a href="https://nextra.site"><img src="https://img.shields.io/badge/Nextra-4-blue" alt="Nextra 4" /></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/bun-latest-f472b6?logo=bun" alt="Bun" /></a>
+  <a href="https://pages.cloudflare.com"><img src="https://img.shields.io/badge/Cloudflare%20Pages-deployed-orange?logo=cloudflare" alt="Cloudflare Pages" /></a>
 </p>
 
 ---
