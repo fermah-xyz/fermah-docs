@@ -8,6 +8,7 @@ let initialized = false
 export function Mermaid({ chart }: { chart: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [svg, setSvg] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (!initialized) {
@@ -32,11 +33,41 @@ export function Mermaid({ chart }: { chart: string }) {
       initialized = true
     }
 
+    let cancelled = false
+    setError('')
     const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`
-    mermaid.render(id, chart.trim()).then(({ svg: renderedSvg }) => {
-      setSvg(renderedSvg)
-    })
+
+    mermaid
+      .render(id, chart.trim())
+      .then(({ svg: renderedSvg }) => {
+        if (!cancelled) setSvg(renderedSvg)
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Mermaid render error:', err)
+          setError('Failed to render diagram.')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [chart])
+
+  if (error) {
+    return (
+      <p
+        style={{
+          color: '#f87171',
+          fontSize: '0.85rem',
+          margin: '1.5rem 0',
+          textAlign: 'center',
+        }}
+      >
+        {error}
+      </p>
+    )
+  }
 
   return (
     <div
