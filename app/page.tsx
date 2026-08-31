@@ -19,7 +19,6 @@ type ProductGroup = {
   description: string;
   icon: string;
   accentColor: string;
-  statusUrl: string;
   links: ProductLink[];
   resources: ResourceLink[];
 };
@@ -31,7 +30,6 @@ const productGroups: ProductGroup[] = [
       "The universal proof marketplace for cheap, fast, and reliable zero-knowledge proof generation.",
     icon: "ph:shield-check-duotone",
     accentColor: "#06c19d",
-    statusUrl: "https://status.fermah.xyz/badge?theme=dark",
     links: [
       { label: "Documentation", href: "/network" },
       { label: "API Reference", href: "/api", comingSoon: true },
@@ -62,7 +60,6 @@ const productGroups: ProductGroup[] = [
       "Decentralized social protocol powered by zero-knowledge proofs.",
     icon: "ph:lightning-duotone",
     accentColor: "#a855f7",
-    statusUrl: "https://status.flashcast.social/badge?theme=dark",
     links: [
       { label: "Documentation", href: "/flashcast", comingSoon: true },
       { label: "API Reference", href: "/flashcast/api", comingSoon: true },
@@ -75,7 +72,6 @@ const productGroups: ProductGroup[] = [
       "Privacy-preserving data infrastructure for the decentralized web.",
     icon: "ph:anchor-duotone",
     accentColor: "#3b82f6",
-    statusUrl: "",
     links: [
       { label: "Documentation", href: "/marina", comingSoon: true },
       { label: "API Reference", href: "/marina/api", comingSoon: true },
@@ -177,23 +173,8 @@ export default function LandingPage() {
                 {group.description}
               </p>
 
-              {/* Status badge slot (fixed height for alignment) */}
-              <div className="my-4 h-[30px]">
-                {group.statusUrl ? (
-                  <iframe
-                    src={group.statusUrl}
-                    width={250}
-                    height={30}
-                    style={{ border: 0, colorScheme: "normal" }}
-                    title={`${group.name} Status`}
-                  />
-                ) : (
-                  <div className="h-[30px]" />
-                )}
-              </div>
-
               {/* Doc / API links (pinned to bottom) */}
-              <div className="mt-auto flex flex-col gap-2">
+              <div className="mt-6 flex flex-col gap-2">
                 {group.links.map((link) =>
                   link.comingSoon ? (
                     <span
