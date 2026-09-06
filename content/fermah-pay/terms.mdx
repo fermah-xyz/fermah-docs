@@ -14,7 +14,7 @@ Every term this book uses, in the sense it uses them. No blockchain background i
 
 **Confirmation.** On Stellar, immediate. A transaction included in a closed ledger is final. There is no confirmation-depth wait, no provisional period, and no risk of the ledger being replaced.
 
-**Custody.** Holding someone else's funds. The prepaid arrangement is custodial after the deposit, since the USDC is in the billing contract. The direct arrangement is not, at any point.
+**Custody.** Holding someone else's funds. The prepaid arrangement is custodial after the deposit, since the USDC is in the treasury the operator controls. The direct arrangement is not, at any point.
 
 **Expiration ledger.** The ledger sequence at which a SAC allowance or a Soroban authorisation entry expires. After this ledger, the allowance is invalid and `transfer_from` calls against it revert. Enforced by the protocol, not by application code.
 
@@ -40,7 +40,7 @@ Every term this book uses, in the sense it uses them. No blockchain background i
 
 **Tenant.** One end-user account inside a product, as the gateway sees it. A prepaid balance belongs to one.
 
-**Treasury.** On this system, the billing contract itself holds deposited USDC via the SAC. Distinct from the fee account, which pays XLM for transaction fees.
+**Treasury.** An account the operator controls that holds deposited USDC as a SAC balance. The billing contract is a separate accounting ledger and holds no USDC itself. Both are distinct from the fee account, which pays XLM for transaction fees.
 
 **USDC.** A token redeemable one-for-one for US dollars, issued by Circle. Seven decimals on Stellar. The currency this system moves.
 

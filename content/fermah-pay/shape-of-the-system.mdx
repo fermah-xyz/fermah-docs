@@ -1,10 +1,12 @@
 ---
-title: "The shape of the system"
+title: "Shape of the system"
 ---
 
 # The shape of the system
 
 One process, one Postgres, one chain connection, and a set of background workers that each own one job. This chapter is the map: what the pieces are, what talks to what, and why the boundaries fall where they do.
+
+---
 
 ## The daemon
 
@@ -33,7 +35,7 @@ One process, one Postgres, one chain connection, and a set of background workers
          ┌────────────┴──────────────┐
          │     STELLAR (the chain)   │
          │   SAC USDC · billing ·    │
-         │   markets                 │
+         │   treasury · apps         │
          └───────────────────────────┘
 ```
 
@@ -42,6 +44,8 @@ One process rather than a service per concern, and the reason is transactional. 
 The cost is honest: a panic anywhere takes the whole daemon down. What makes that acceptable is that every worker is restart-safe by construction, so a process that dies mid-flight resumes from durable state rather than from memory. The rest of this chapter is largely about how.
 
 There is no message broker. Every queue is a Postgres table drained with `SELECT … FOR UPDATE SKIP LOCKED`, which means a worker claiming work and the state change that work produces commit together. Adding a broker would split that commit across two systems.
+
+---
 
 ## The workers
 
@@ -75,6 +79,8 @@ The cadences are not arbitrary. The money movers tick at two seconds because a c
 
 Leadership is a load control on a shared RPC budget, not the correctness mechanism. `FOR UPDATE SKIP LOCKED`, the claim leases and the state compare-and-swap are what make concurrent workers safe, and those hold with or without leadership. The one exception is the chain observer, where single-writer really is a correctness requirement, because it writes a cursor that must have exactly one writer.
 
+---
+
 ## What the workers actually do
 
 Each money path is a worker draining a Postgres queue and pushing transactions at the chain. This chapter walks the three that move money, phase by phase, because the phase boundaries *are* the crash safety and they are the part worth reading closely.
@@ -91,6 +97,8 @@ The shape they share:
 ```
 
 No database transaction is held open across a chain call or a signing operation. That is not tidiness: a transaction spanning an RPC round trip holds row locks for as long as the network takes, and a slow provider becomes a stalled queue. So the work is cut into phases at exactly the points where a durable commit is needed, and the phases with no transaction are the ones that touch the outside world.
+
+---
 
 ## Funding: getting USDC in
 
@@ -115,11 +123,13 @@ No database transaction is held open across a chain call or a signing operation.
     status = 'settled' ──────────────────────────────── tx 3
 ```
 
-Two operations land on-chain per funding, and they are different in kind. The first is the SAC `transfer` that moves the user's USDC into the billing contract's address (the contract holds SAC USDC directly — no separate treasury EOA). The second calls `credit` on the billing contract, which records the deposit on the prepaid ledger, keyed by the first transaction's hash, which is what makes the credit deduplicable.
+Two operations land on-chain per funding, and they are different in kind. The first is the SAC `transfer` that moves the user's USDC into the treasury the operator controls. The second calls `credit` on the billing contract, which records the deposit on the prepaid ledger, keyed by the first transaction's hash, which is what makes the credit deduplicable. The billing contract holds no USDC — it is the accounting ledger, and the treasury holds the funds.
 
 The crash window is the interesting part. Killed before the hash is committed, the next tick reads the nonce status via `getLedgerEntries` and finds the nonce unconsumed, so nothing landed and it re-prepares safely. Killed after the commit but before broadcasting, the next tick finds a hash it can look up. Killed after broadcasting, the nonce is consumed and the hash is there, so it converges from the receipt instead of sending again. There is no ordering in which it broadcasts twice.
 
 The one branch that pages a human is a consumed nonce with no stored hash. It means the authorisation was spent by something that is not this gateway, and the honest response is to refuse to guess: crediting requires a deposit hash, and inventing one would corrupt the on-chain ledger with a credit that names a transfer nobody can verify.
+
+---
 
 ## Settlement: charges to the chain, in batches
 
@@ -148,6 +158,8 @@ This path submits before it records, which is the opposite of funding, and that 
 Note what the worker does *not* do: it never marks a charge settled. It records the hash and stops. Promotion to `settled` belongs to the observer, because the observer read the chain, whereas this worker only knows what it sent. A worker that marked its own submissions settled would be reporting its intent as fact.
 
 Retries are finite. After five transient attempts the charge is marked failed and the cached balance restored, both in one transaction, so a charge the gateway gives up on does not silently keep the user's money debited.
+
+---
 
 ## The relay: four phases, and a lease
 
@@ -178,6 +190,8 @@ Fee accounting is exactly-once by riding a state transition. The settle is a bli
 
 The directions are asymmetric on purpose. A reverted transaction **settles** the actual fees burned, because the fees were genuinely spent even though the bet failed. A pre-broadcast failure **releases** the reservation, because nothing was spent. Getting that backwards either leaks budget or charges for work never done.
 
+---
+
 ## Where the queues meet the safety nets
 
 ```
@@ -198,3 +212,5 @@ The recovery worker exists because a claimed row with no result is invisible to 
 The expiry worker handles a hazard specific to signed authorisations: one can die of old age while queued. A row whose validity window has passed can never succeed, so retrying it burns fees forever. Terminalizing it releases the reservation and tells the product, once.
 
 The gas monitor is the only worker whose job is to stop the others. It reads the fee account's XLM balance on a long interval and compares unreserved headroom against a floor, and below the critical floor it writes a durable halt that closes admission. It deliberately does not touch the operator's own pause switch, and it deliberately does not stop the broadcast worker, because rows already holding signed authorisations and reserved fees represent committed liability. Draining that queue is what *returns* headroom; freezing it would strand the authorisations until they expire.
+
+---
