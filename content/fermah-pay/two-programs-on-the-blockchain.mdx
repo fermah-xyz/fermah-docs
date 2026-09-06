@@ -1,5 +1,5 @@
 ---
-title: "The two programs on the blockchain"
+title: "Two programs on the blockchain"
 ---
 
 # The two programs on the blockchain
@@ -8,19 +8,23 @@ Two contracts carry the money logic, for the two things a payment system charges
 
 They are at different stages. The billing contract is designed and exercised against its test suite, with deployment to Stellar testnet as the first tranche deliverable. The subscription manager is designed and proven against its test suite, with deployment following in the second tranche. The EVM equivalents of both are production code: the billing contract runs on mainnet, and the subscription manager is written, reviewed, and tested but not yet deployed. This chapter describes the Soroban contracts as designed, and the book would rather say that than let a reader assume they are running.
 
+---
+
 ## The prepaid ledger
 
-The billing contract holds USDC directly via the SAC. It maintains a ledger of prepaid balances, keyed by account identifier. Two operations matter: `credit`, which records a confirmed deposit, and `charge_batch`, which debits many accounts in one call.
+The billing contract holds no USDC. It is a pure credit ledger of prepaid balances, keyed by account identifier; a separate treasury account holds the deposited USDC. Two operations matter: `credit`, which records a confirmed deposit, and `charge_batch`, which debits many accounts in one call.
 
 Two dedup properties are enforced by the contract rather than by the gateway.
 
 A deposit cannot be credited twice. Each `credit` names the transaction hash of the deposit that justifies it, the contract records processed hashes, and a repeat reverts. So a gateway bug that submits the same credit twice, or an operator who tries to, credits once.
 
-What that does not do, and it is the right thing to be explicit about, is prove the deposit happened. The hash is an opaque `BytesN<32>`: the contract checks that the value is new, not that it names a real transfer. So the operator is trusted to credit only against deposits it actually received. That is the one place the prepaid arrangement rests on the operator rather than on the chain, and it follows from the ledger being a contract that holds SAC USDC directly. The contract cannot independently verify that a SAC `transfer` targeting it actually occurred from a specific user — it can only verify that the operator claims it did. What makes that trust observable rather than blind is the reconciliation described in [the software around the signature](/fermah-pay/software-around-the-signature#comparing-beliefs-against-the-chain-continuously). It compares the total SAC USDC held by the contract against what the gateway's own records account for, and a divergence past 100 USDC is raised for a human rather than absorbed. The spending caps below bound the damage in the meantime.
+What that does not do, and it is the right thing to be explicit about, is prove the deposit happened. The hash is an opaque `BytesN<32>`: the contract checks that the value is new, not that it names a real transfer. So the operator is trusted to credit only against deposits it actually received. That is the one place the prepaid arrangement rests on the operator rather than on the chain, and it follows from the ledger being an accounting contract separate from the funds. The contract cannot independently verify that a SAC `transfer` into the treasury actually occurred from a specific user — it can only verify that the operator claims it did. What makes that trust observable rather than blind is the reconciliation described in [the software around the signature](/fermah-pay/software-around-the-signature#comparing-beliefs-against-the-chain-continuously). It compares the total USDC held in the treasury against what the gateway's own records account for, and a divergence past 100 USDC is raised for a human rather than absorbed. The spending caps below bound the damage in the meantime.
 
 A charge cannot be applied twice either, and the way it fails is worth noting. Each charge carries its own `BytesN<32>` identifier, consumed on first use. Inside `charge_batch` an already-consumed identifier is skipped silently with no event, which is what lets the gateway resubmit a batch it is unsure landed; submitted through the single-charge function the same identifier reverts. Re-attempting a charge that was genuinely refused requires a fresh identifier, because the old one is spent either way.
 
 The batching behaviour matters for the same reason. One bad entry, an account with insufficient coins for instance, does not revert the other entries. It emits a failure event carrying a typed reason from a four-variant enum, and the loop continues. The gateway reads that reason and credits the cached balance back. Without it, one underfunded account would fail everyone else's charges in the same batch. Two whole-batch reverts do exist, and both are shape errors rather than money errors: mismatched array lengths, and a batch above the hundred-entry maximum.
+
+---
 
 ## Three ceilings the operator cannot exceed
 
@@ -34,6 +38,8 @@ So a compromised or buggy gateway cannot drain a prepaid balance faster than tho
 
 One asymmetry belongs here because a careful reader will find it. These ceilings bound charges. `credit` has no ceiling of its own, so what the caps limit is the rate at which value leaves an account, not the amount that can be credited into one. Which is why the credit path's honesty rests on the reconciliation above rather than on a number in the contract.
 
+---
+
 ## Access control and upgradeability
 
 Access control uses a custom Soroban admin pattern with two roles. An operator role can `credit` and `charge_batch`. A separate admin role can pause the contract, adjust the three ceilings, and authorise an upgrade. Every money-moving function checks the operator role plus a `when_not_paused` guard.
@@ -41,6 +47,8 @@ Access control uses a custom Soroban admin pattern with two roles. An operator r
 The contract is upgradeable via `update_current_contract_wasm`, which is a real trade-off worth naming rather than glossing: it means a defect can be corrected without migrating every account, and it means the admin is a party with meaningful power. Which is precisely why the key that signs day-to-day transactions and the key that can change the rules are different roles.
 
 The money invariants here are not only unit-tested. A property-based test suite using `proptest` exercises them over randomised inputs, so properties like "a charge never underflows a balance", "a credit moves the balance by exactly the credited amount" and "a duplicate identifier cannot debit twice" hold for a range of inputs rather than for hand-picked cases, and the suite is a required CI gate.
+
+---
 
 ## Recurring billing via SAC approve
 
@@ -69,3 +77,5 @@ This contract is deliberately **not** upgradeable. There is no proxy in front of
 That choice costs something real: a defect cannot be patched in place. It is the right cost for code that controls allowances over users' accounts.
 
 Operator key rotation and an emergency stop therefore live in a separate registry contract that the billing contract consults at the top of every privileged call. So the operating key can be rotated and privileged operations halted without redeploying the subscription contract or asking a single subscriber to re-approve.
+
+---

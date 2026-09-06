@@ -10,11 +10,15 @@ USDC on Stellar is a Stellar Asset Contract balance tracked inside a contract th
 
 The closest everyday version is a cheque you cannot cash because you have no stamp, and the post office sells stamps only in a currency you do not have.
 
+---
+
 ## Telling the user to go buy the stamp is where the product dies
 
 The obvious fix is for the user to acquire some XLM first. In practice that means an exchange account, identity verification, a purchase, and a transfer to the right address on the right network, all before a five-dollar bet. It has to be enough to cover the fees and not so much that it is wasted, and the right amount depends on what the base fee happens to be at the moment they act, which the user has no way to estimate. They now hold a second balance, in an asset they never wanted, whose price moves.
 
 A product that asks for this is asking most of the people who wanted to use it to leave instead.
+
+---
 
 ## Somebody else paying is easy, and that is not the hard part
 
@@ -24,10 +28,12 @@ On Stellar, whoever submits a transaction is the party acting: the transaction's
 
 The first is custody. If the operator can move a user's funds, the operator holds those funds in every sense that matters, and every guarantee about the user's money collapses into a promise about the operator's conduct and the correctness of its code. This is also why the naive designs fail: an unbounded SAC `approve` to a relayer, or a multi-sig account whose keys the operator co-holds, both hand over standing authority that outlives the payment it was granted for.
 
-The second is subtler and easier to miss, because it does not involve stealing anything. A relayer that cannot take a dollar can still change what the payment *does*. A signed authorisation binds the invocation tree — the contract, the function, the arguments — and nothing else. If the user's instruction is "stake five dollars on this outcome, and accept no fewer than forty shares" and the slippage floor is an argument the relayer can choose, then the relayer can pick a worse outcome, drop the price protection, or redirect the sponsor credit, without ever moving an unauthorised dollar. Binding the amount is not enough. Every term has to be bound.
+The second is subtler and easier to miss, because it does not involve stealing anything. A relayer that cannot take a dollar can still change what the payment *does*. A signed authorisation binds the invocation tree — the contract, the function, the arguments — and nothing else. If the user's instruction is "swap five dollars, and accept no fewer than forty tokens" and the minimum-output floor is an argument the relayer can choose, then the relayer can pick a worse rate, drop the price protection, or redirect the sponsor credit, without ever moving an unauthorised dollar. Binding the amount is not enough. Every term has to be bound.
 
 The third is that fees are real money, spent on behalf of strangers who initiate the requests. A system that pays the postage for anyone who asks is a system anyone can drain, for free, by asking repeatedly. And unlike the first two, this one cannot be solved by a signature, because the requests are perfectly valid. It needs a budget.
 
 Those three constraints are the product. A working answer lets a user pay while holding only the token they are paying in, makes it impossible for the operator to move funds without that user's signature by the rules of the chain rather than as a matter of policy, binds every term of the payment and not just the amount, and bounds what the operator can be made to spend on other people's behalf. It also has to be fast enough and simple enough that a product can adopt it without becoming a payments company.
 
 The next chapter is how.
+
+---
