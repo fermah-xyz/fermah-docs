@@ -10,81 +10,80 @@ The reason is that the mechanism is synchronous and the chain is not. A user sig
 
 ---
 
-## One gateway, several products
+## One gateway, many sellers
 
-Fermah Pay runs as its own service. Products consume it over gRPC through a typed Rust SDK, with the `.proto` files as the single source of truth for the wire contract, so a product creates a charge or relays a direct payment without touching Soroban transaction construction, fee-bump wrapping, nonce management, batching, retries or chain observation. There is no REST surface.
+Fermah Pay runs as its own service, and sellers consume it over gRPC, with the `.proto` files as the single source of truth for the wire contract: buyers, deposits, charges, balances, withdrawals, mandates and recurring charges. A seller creates a charge without touching Soroban transaction construction, fee-bump wrapping, nonces, batching, retries or chain observation. For agents and APIs paid over HTTP, the same gateway serves the [x402](/fermah-pay/terms#terms) facilitator interface: `/verify`, `/settle` and `/supported`.
 
-That means several products share one deployment, one fee account and one Postgres instance, which makes isolation a correctness property rather than a nicety. An API key resolves server-side to a `(product_id, environment)` pair taken from the key's own database row, never from the request body, and every query that reads product data carries that pair in its `WHERE` clause. Reaching for another product's resource returns the same uniform `NotFound` an unknown identifier would, because a `PermissionDenied` would itself confirm the resource exists.
+Many sellers share one deployment of the system, one fee account and one Postgres instance, which makes isolation a correctness property rather than a nicety. A **product** owns **seller deployments**, each pinned to one Stellar network, and an API key belongs to exactly one deployment. The key resolves server-side to its product, deployment and network, never from the request body, and every query that reads buyer data carries all three in its `WHERE` clause. Reaching for another seller's buyer returns the same uniform `NotFound` an unknown identifier would, because a `PermissionDenied` would itself confirm the buyer exists. The database stores only a SHA-256 digest of each key.
 
-The SDK is the second reason products adopt this rather than building their own. It injects credentials, classifies a `tonic::Status` into a typed error once, retries only what it can identify as transport-transient, and mints the idempotency key **outside** the retry loop so every attempt carries the same one. A retry therefore cannot become a second charge.
+Retries are part of the contract, not an afterthought. Every deposit, charge and withdrawal takes an idempotency key. Repeating a request with the same key returns the original, whatever happened in between: a repeated charge is never debited again, even if the balance is now too low for a new one. Reusing a key with a different amount is refused with `idempotency_conflict`. So a retry can never become a second charge.
 
 ---
 
-## Live money and test money never share a process
+## Testnet money and mainnet money never share a process
 
-Every product needs somewhere to develop without spending real dollars, and the usual way to provide it is a flag on the request or a column in the database. Both put live and test money one bug away from each other.
+Every seller needs somewhere to develop without spending real dollars, and the usual way to provide it is a flag on the request or a column in the database. Both put live and test money one bug away from each other.
 
-Here the data separation is structural. An API key's prefix declares its tier, `fpk_live_` or `fpk_test_`, and a daemon process serves exactly one tier, fixed by its config. The live process holds live rows, the test process holds test ones, and a production deployment runs both against one Postgres. Nothing in a request crosses that boundary, because the tier is a property of which process received it.
-
-The signing keys are separated differently, and the difference matters enough to state rather than blur. Each tier has its own signing key, and what stops a test process from using a live key is the deployment configuration. The application performs no such check and could not: a daemon handed the other tier's key would sign with it. So that half of the guarantee is a deployment property to configure and verify, not a line of code to read.
+Here the separation is structural. A seller deployment is pinned to one network, `stellar:testnet` or `stellar:pubnet`, and its API keys carry the network in their prefix, `fps_test_` or `fps_live_`, derived from the deployment at issuance rather than from anyone's input. A gateway process serves exactly one network, and at startup it checks that its RPC endpoint is on the network it is configured for, by passphrase, and refuses to start otherwise. Nothing in a request crosses that boundary, because the network is a property of which process received it.
 
 ---
 
 ## Settlement happens after the answer
 
-A charge returns to the caller before it reaches the chain, which is what makes this feel like a payments API rather than a blockchain application. Inside one Postgres transaction the handler takes `SELECT … FOR UPDATE` on the account's balance row, debits it, inserts the charge as `authorized`, writes the idempotency record, and commits. A worker picks the row up on its next tick and batches it into a single `charge_batch` call so one transaction's overhead amortises across up to fifty charges.
+A charge returns to the caller before it reaches the chain, which is what makes this feel like a payments API rather than a blockchain application. Inside one Postgres transaction the gateway locks the buyer's row, checks the available balance, debits it, and records the charge with its idempotency key. A worker picks it up and batches it into a single `charge_batch` call, with up to 98 charges from any buyers amortising one transaction's overhead.
 
 So for a window, Postgres says a charge happened and the chain has not heard of it. That window is where the failure modes live, and they are all the same shape: something interrupts the sequence between the answer and the confirmation.
 
-The answer to all of them is that the chain is the truth and the cache converges toward it. A worker claims rows with `FOR UPDATE SKIP LOCKED`, submits, records the transaction hash, and the **chain observer** is what flips a charge to `settled`, because the observer reads the chain rather than trusting the submission. When the contract skips an entry, the observer sees the failure event and credits the balance back in the same transaction that records the rejection, so there is no state where the money was taken and the record says otherwise.
+The answer to all of them is a submission engine that never has to guess:
 
-Crash safety comes from ordering, and the ordering differs by path in a way worth being exact about. On the paths that carry a user's signed authorisation, funding and the relay, the transaction is filled and signed without broadcasting, its hash is persisted and committed while the row is still `pending`, and only then is it broadcast. A process killed between the commit and the broadcast returns to a hash it can look up; one killed before the commit finds the nonce unused on-chain and can safely re-prepare. The durable record precedes the irreversible act, so neither ordering broadcasts twice.
+- **Install before send.** The complete signed fee-bump envelope, its hashes and its source sequence are written in one row, in the same transaction that marks the charges it carries as submitted, before any broadcast. The worker's own database role cannot change those columns afterwards. A crash at any point leaves either nothing, because nothing was sent, or the exact bytes to send again.
+- **Outcomes come only from the hash.** A reply to `sendTransaction`, even a refusal, never settles anything. A submission is final only when the network returns the transaction for its hash, or when a node that has ingested ledgers past the envelope's time bound proves it was never included and never can be. The local clock is never evidence.
+- **The contract decides the rest.** When a transaction's fate is unknown, the worker waits for the operator's authorisation in it to lapse, then reads the contract's own record of each charge, which holds its outcome. Past the record's lifetime, the contract's `charges` events over the exact ledger range decide. A charge that still cannot be decided is quarantined for an operator rather than guessed at.
+- **Final means final.** A refused charge's amount returns to the available balance in the same statement that records the refusal, and a database trigger refuses any change to an outcome once it is final, so each balance change happens exactly once.
 
-Charge settlement, which carries no user signature, submits first and records the hash after. A crash there leaves a claimed row with no hash, and a recovery worker resolves it by receipt: submitted and successful, the observer settles it; reverted, the row returns to the queue with its retry count bumped; absent, it waits another tick. What makes that safe rather than merely likely is on-chain, where a charge identifier is consumable once, so resubmitting a batch that already landed skips rather than double-debits. Retries are finite: after five transient attempts the charge is marked failed and the cached balance restored in one transaction.
+The worker sends from several source accounts at once, each holding no XLM, so one slow envelope does not hold back the rest. On testnet, [1,000 charges](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-09-30T055844-load-test.json) admitted through the API at about 84 per second all settled on-chain in 11 batches sent from five sources. Inclusion fees follow the market reported by the RPC node, within a cap, and double only for a source whose last envelope provably expired.
 
 ---
 
 ## Watching the chain
 
-The gateway learns what happened by polling the chain for events, which on Stellar is simpler than it sounds.
+The system learns what happened on-chain by reading the contract's events, which on Stellar is simpler than it sounds.
 
 Stellar's consensus is aBFT. There are no reorgs. A ledger that has been closed is final. This eliminates the hardest part of chain observation on EVM: the confirmation-depth gate, the parent-hash ring for detecting reorganisations, the buffer that holds unconfirmed events, and the dedup logic across the historical-scan and live-subscription handoff.
 
-What remains: the gateway polls for contract events using `getEvents` from the Soroban RPC endpoint, filtered by contract address and event topic. It records the last ledger sequence it processed, and each poll starts from `lastLedger + 1`. A gap — a dropped connection, a restart, a rate-limited provider — becomes a durable row rather than an absence nobody notices, and a scan closes it by re-reading those ledgers with `getEvents`. Applying twice is prevented by identity: every applied event is recorded by its `(ledger_sequence, tx_hash, event_index)`, so a re-application finds the row and does nothing.
+What remains: the observer reads the contract's events with `getEvents` from the Soroban RPC, filtered by contract address, from a persisted position per seller deployment. Each page is stored in one database transaction that also moves the position forward, so a crash never skips or repeats an event. If the observer falls further behind than the node's retention, about seven days on public endpoints, the ledgers it can no longer read become a durable `event_gap` finding rather than an absence nobody notices.
 
-Only one process observes the chain at a time, elected by a Postgres advisory lock, because the observer writes a cursor that must have a single writer. The others run in standby ready to take over. A leader-elected worker starts in a `NotYetLeader` state that is healthy *without* a heartbeat, because a legitimate standby replica never ticks; it flips to leading when it wins the lock, which is what makes a hung leader detectable. Get either half wrong and you either drain every follower from the load balancer or report a wedged leader as healthy forever.
-
-Two observers run against the chain, and they are shaped differently for a concrete reason. The billing monitor filters on one contract address, because there is exactly one billing contract. The relay's settlement observer cannot: settlement events come from many application contracts, a distinct address per contract, and a contract created after startup must not be structurally invisible. So it watches by event signature with no address filter and moves the trust check into the handler, where an untrusted address is dropped. That also means it has no single contract to key a cursor on, so it uses a synthetic partition tag rather than an address, and its own leader lock.
+Only one observer, and one worker, acts at a time, chosen by a lease in Postgres. The others run on standby ready to take over, and the lease each holds is exported as a metric, so a deployment where none holds it raises an alert.
 
 ---
 
 ## Comparing beliefs against the chain, continuously
 
-None of the above is trusted to be sufficient. A separate reconciler runs continuously and compares what the gateway believes against what the chain says, and what its three regimes are *permitted* to do differs in a way that is the point rather than an accident.
+None of the above is trusted to be sufficient. The observer is a separate process with no key: it can read, and it can append findings, and it cannot change a balance. That separation is the point. A compromised gateway or worker cannot silence the process that checks them.
+
+It checks two things. Every event is matched against the gateway's records as it arrives:
 
 ```
-    regime              finds                           may it repair?
-    ─────────────────────────────────────────────────────────────────────
-    balance drift       cache total != treasury         NO: record + page
-    missed events       a log never applied             YES: via identity
-    phantom charge      on-chain charge, no DB record   NO, but it PAUSES
-                                                        the money movers
+    finding                      means                                    severity
+    ──────────────────────────────────────────────────────────────────────────────
+    unknown_charge               the operator key charged a buyer the     critical
+                                 gateway never admitted
+    charge_amount_mismatch       a settled amount differs from the row    critical
+    unknown_withdrawal           USDC left the treasury outside the       warning
+                                 worker
+    mandate_changed_elsewhere    a mandate changed through another        warning
+                                 client
+    code_changed                 the contract runs code nobody expected   critical
 ```
 
-Balance drift is detect-only, and that looks like timidity until you see why. The treasury's SAC balance is an aggregate with no event identity attached. Writing it into the cache would double-credit a deposit still inside its settlement window: once by the aggregate write and again by the observer applying the event. Repair therefore belongs only to the paths that carry an event's identity and can therefore prove they have not already applied it.
+And at a regular interval it reconciles three views that must agree: the treasury's USDC on the SAC against the contract's liabilities and revenue, the contract's totals against the sum of its events, and both against the database. A discrepancy is recorded only once it has persisted through several checks, so a deposit still in flight does not page anyone.
 
-When it finds an event the observer never ingested, it applies it through exactly those identity-bearing paths, which both correct the state and re-emit the webhook the product never received. That coverage is contiguous across a seven-day window rather than a single batch, tracked by a persisted low-water mark, because a memoryless window would lose anything older than one batch.
-
-And when it finds a charge on-chain that the gateway has no record of authorising, it treats that as what it looks like, a compromised operator key rather than a bug. After a debounce window it writes a system-set emergency pause, halting the money movers while leaving detection running, because an operator working an incident needs to keep seeing divergences accumulate.
+Findings are append-only, readable by the operator, and wired to Prometheus alerts and a Grafana dashboard with a row per threat in the [threat model](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/security/threat-model.md). The monitor also watches itself: a stalled RPC node, failing observer rounds or an observer that stops advancing each raise their own alert, so the monitoring cannot go quietly blind. Each threat is [drilled on testnet](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/monitoring-drills.md), by provoking the condition for real and recording the alert that fired.
 
 ---
 
 ## What the product is told
 
-Because answers come early, results arrive later, as webhooks. A webhook is an anonymous HTTP request until something makes it otherwise, so each delivery carries an `X-Fermah-Signature` header of `t=<unix>,v1=<hex>`, an HMAC-SHA256 over the timestamp and the raw body, and the SDK ships the verifier rather than leaving each consumer to write one. The timestamp is checked before the HMAC, which bounds how long a captured delivery can be replayed. During a secret rotation the header carries both the current and previous signatures, so a rotation does not drop deliveries.
+Because answers come early, results arrive later, and a seller reads them through the same API that started them. Every deposit, charge, withdrawal, mandate and recurring charge has a `Get` call returning its current state, from `ADMITTED` or `SIGNED` to its final outcome and the transaction that settled it. Over x402, `GET /settlements/{commitment}` returns the charge a commitment became and its on-chain transaction once it has landed.
 
-Delivery is durable by construction. The event row is written in the same Postgres transaction as the state change it describes, a transactional outbox, so there is no ordering in which the state moved and the event was lost. Delivery then retries with exponential backoff over an eight-attempt budget, and a dead-lettered event is still readable through a replay endpoint with a ninety-day window.
-
-The endpoint URL a product registers is validated against an SSRF blocklist covering IPv4 and IPv6 private ranges, link-local and loopback addresses, hostname strings and a port blocklist, because an unvalidated destination turns the gateway into a way to make requests against private infrastructure.
-
----
+Fermah Pay also delivers results as signed webhooks, through a transactional outbox with retries. The Stellar implementation answers by query instead, and the reason is who runs it. On EVM, Fermah operates one service for its own product, whose endpoint it knows and trusts. On Stellar, each seller or operator runs Fermah Pay for itself, and a gateway that calls out to arbitrary seller URLs is a gateway that must defend against being turned into a way to reach private infrastructure. Reading state by query keeps the gateway's network surface inbound-only, keeps the seller in control of when it learns a result, and loses nothing: a state, once final, cannot change.

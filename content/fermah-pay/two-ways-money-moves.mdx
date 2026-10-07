@@ -4,48 +4,58 @@ title: "Two ways money moves"
 
 # Two ways money moves
 
-The same Soroban authorisation mechanism supports two arrangements, and the difference between them is whether Fermah ever holds the user's USDC at all. Products pick one based on what they are charging for.
+The same Soroban authorisation mechanism supports two arrangements on Stellar, and the difference between them is where the user's USDC waits until it is charged. Products pick one based on what they are charging for.
 
 ---
 
 ## A prepaid balance, for many small charges
 
-Some products bill repeatedly for small amounts. A proving network charges per unit of work consumed, and a user might trigger hundreds of those in an hour. Putting each one on-chain individually would be slow and would cost fees every time, for amounts smaller than the fees.
+Some products bill repeatedly for small amounts. An API charges per call, an agent pays per request, a proving network charges per unit of work consumed, and a user might trigger hundreds of those in an hour. Putting each one on-chain individually would be slow and would cost fees every time, for amounts smaller than the fees.
 
-So the user funds once and the product draws it down. The user signs one authorisation, the gateway submits a fee-bump transaction that calls the SAC's `transfer` function to move the USDC into the treasury, and then calls `credit` on the billing contract, which records the deposit against that account. The billing contract holds no USDC — it is a pure credit ledger of prepaid balances, keyed by account identifier. A separate treasury account, which the operator controls, holds the deposited USDC.
+So the user funds once and the product draws it down. The user signs one authorisation for the ledger contract's `deposit`, and the operator submits it through a fee bump. Inside that one invocation the contract moves the USDC from the user's wallet to the seller's treasury through the SAC, and credits the user's account. Both happen or neither does: a deposit the user cannot fund leaves the ledger untouched. The ledger contract holds no USDC — it records each buyer's credit and the seller's earned revenue, and a separate treasury account holds the deposited USDC.
 
-Charges after that carry no signature and need no user involvement, which is the point: the user authorised the funding, and the product is spending against a balance the user already gave it. Each charge debits a balance the gateway keeps in Postgres, returns immediately, and reaches the chain later, batched with others into a single `charge_batch` call so one transaction's overhead amortises across many charges — fifty per batch in practice, with the contract's ceiling at a hundred.
+Charges after that carry no signature and need no user involvement, which is the point: the user authorised the funding, and the product is spending against a balance the user already gave it. Each charge is admitted by the gateway against the user's available balance, debited at once, answered immediately, and reaches the chain later, batched with others into a single `charge_batch` call so one transaction's overhead amortises across many charges — up to 98 per batch, the most that fit Stellar's limit of 200 ledger-entry writes per transaction.
 
-That "later" is what makes the arrangement work and what makes it need care. The Postgres balance is a write-through cache and the chain is the truth, so the two can disagree for a window, and everything in [the software around the signature](/fermah-pay/software-around-the-signature#the-software-around-the-signature) about reconciliation exists because of it. The invariant is that a charge accepted against the cache either settles on-chain or is credited back, and the credit-back happens in the same transaction that records the rejection, so there is no state where the money was taken and the record says otherwise.
+That "later" is what makes the arrangement work and what makes it need care. The gateway's balance is an admission limit and the contract is the truth, so the two can disagree for a window, and everything in [the software around the signature](/fermah-pay/software-around-the-signature#the-software-around-the-signature) exists because of it. The invariant is that a charge admitted by the gateway either settles on-chain or has its amount returned to the available balance, and the return happens in the same statement that records the refusal, so there is no state where the money was taken and the record says otherwise.
 
-The user's funds are in a treasury Fermah operates for this arrangement. That is custody, stated plainly, and it is the honest description of a prepaid balance. What bounds it is on-chain: the billing contract enforces a per-transaction maximum, a per-account daily maximum and a global daily maximum, none of which the gateway can exceed whatever it submits. The [contracts chapter](/fermah-pay/two-programs-on-the-blockchain#three-ceilings-the-operator-cannot-exceed) has the comparators.
+The user's funds are in a treasury the operator controls. That is custody, stated plainly, and it is the honest description of a prepaid balance, as on a prepaid card. What bounds it is on-chain: the contract refuses a charge above the user's balance or above a per-charge maximum, and once set, it refuses charges that would take one user, or the seller as a whole, past a daily limit. None of these can be exceeded whatever the gateway submits. The treasury itself keeps only what operations need, while the rest sits in a cold reserve that needs two of three signatures to move. The [contract chapter](/fermah-pay/two-programs-on-the-blockchain#ceilings-the-operator-cannot-exceed) has the details.
 
----
-
-## A direct payment, where nothing is held
-
-A direct-payment product does not want a balance. A swap is one payment to one application contract, and the user wants the output back, so there is nothing to prepay.
-
-Here the signed authorisation targets the application contract's `swap` function directly. Fermah wraps it in a fee-bump transaction and submits. Inside `swap`, the contract calls `token.transfer(user, contract_address, amount)`, and because the user's auth entry covers the full invocation tree — including this sub-invocation — the Soroban runtime authorises the transfer without a separate approval. The output is credited to the user. Fermah's billing contract is not in the path, the gateway writes no balance row. A failed payment leaves nothing to unwind because nothing moved.
-
-This is the path where the second problem from [money you cannot move](/fermah-pay/money-you-cannot-move#money-you-cannot-move) becomes concrete. A swap has terms the transfer authorisation alone does not cover: the minimum output to accept (a slippage floor), who gets the sponsor credit. Those terms are arguments to the application contract call, and because Soroban authorisation entries bind the entire invocation tree — contract address, function name, and every argument — they are all covered by the user's signature. The submitter cannot change them.
-
-On the EVM version of this system, binding the terms required a second signature over a separate typed-data struct and a nonce-sharing trick to make the two atomic. On Soroban, the invocation tree binding means a single authorisation entry covers both the fund movement and the application-level terms. One signature, not two.
-
-The result arrives asynchronously. The gateway watches for the application contract's own settlement event, reads the output amount out of it, and delivers that to the product as a signed webhook. On failure the webhook carries a stable snake_case reason rather than a revert string, because the consuming product branches on it in code.
+Unused credit goes back the same way it came in. A withdrawal is one invocation that debits the user's credit and moves the USDC from the treasury to the user's wallet, authorised by the user for the amount and destination, and by the treasury for the transfer. By default it can only go to the user's own wallet, so a stolen buyer key cannot send it anywhere else.
 
 ---
 
 ## Recurring charges
 
-A third arrangement exists in the contracts and is worth describing precisely, because precision here is the difference between a fact and a claim.
+A subscription is the other shape: the same amount, every period, without asking the user each time.
 
-The design uses the SAC's `approve` function with `expiration_ledger`. A subscriber calls `approve` to grant the billing contract an allowance — a maximum amount the contract may `transfer_from` — that expires at a specific ledger sequence. The gateway then calls the billing contract's `charge_subscription` function on schedule, which calls `transfer_from` to pull USDC from the subscriber into the treasury, up to the approved amount.
+The user signs one authorisation for the ledger contract's `authorize_recurring`, which records a **mandate** — up to an amount per period, for a number of periods, never after an end ledger — and, under the same signature, calls the SAC's `approve` to let the ledger contract move up to the mandate's total from the user's wallet until that end ledger. From then on the operator charges each period with `charge_recurring_batch`, and the USDC moves straight from the user's wallet to the treasury as the seller's revenue, without the user signing again.
 
-The subscriber signs one authorisation for the `approve` call. From then on the gateway charges on schedule without the subscriber re-signing. The contract checks: `amount <= approved_allowance` and `current_ledger <= expiration_ledger`. A charge after the allowance expires reverts.
+```
+    authorize_recurring(
+        owner,
+        mandate_id,
+        amount:      100_000_000,   // at most 10 USDC per period (7 decimals)
+        period_secs: 2_592_000,     // a 30-day period
+        cycles:      5,             // five periods
+        live_until:  <ledger>       // authority dies at this ledger
+    )
+      └─ usdc.approve(owner, ledger_contract, 50 USDC, live_until)
+```
 
-Two properties are worth noting. First, the allowance expires by construction. On EVM, an ERC-20 `approve` persists until explicitly revoked, which means a subscriber who forgets to cancel has granted standing authority forever. On Stellar, `expiration_ledger` kills the allowance at a known time. No revocation needed, no "infinite approve" risk, no standing authority outliving the subscription.
+The contract checks every charge against the mandate: a period is charged at most once, never before it starts and never after it ends, never above the mandate's amount, and never after the end ledger. A refused charge records why, `NotDue`, `AlreadyCharged`, `AboveMandate`, `AllowanceShort` and so on, so the seller sees exactly what happened.
 
-Second, this is `transfer_from`, not a first-party transfer. The funds move from the subscriber's account to the treasury when charged; the billing contract is the authorised spender that directs the pull, but it holds no USDC itself. This is a different trust model than the EVM version, where EIP-7702 delegation ran code inside the subscriber's own account — the executing contract *was* the subscriber — and the transfer was first-party. The Soroban model is structurally an allowance-based pull, bounded by the approved amount and the expiration ledger. It is simpler and safer by default, but it is not zero-custody at the point of pull — the treasury holds the charged amount after it is pulled.
+Three properties are worth noting. First, the allowance expires by construction. On EVM, an ERC-20 `approve` persists until explicitly revoked, which means a subscriber who forgets to cancel has granted standing authority forever. On Stellar, `expiration_ledger` kills the allowance at a known time, and the SAC itself stops honouring it. No standing authority outlives the subscription.
+
+Second, only the ledger contract's code can spend the allowance, and only for a period of a mandate the user signed. A new mandate replaces the old one rather than adding to it, so what was left of the old one cannot be spent.
+
+Third, the user is always in control. `revoke_recurring` ends the mandate and sets the allowance to zero, and it works even while the contract is paused, so stopping charges never depends on the operator or the admin. The user can also lower the allowance from any wallet, and the next charge is refused.
+
+On the EVM version, recurring billing ran through account delegation, with code executing inside the subscriber's own account. On Soroban it is an allowance-based pull bounded by the mandate and the expiration ledger: simpler, and safer by default.
 
 ---
+
+## Direct payments, on Stellar's own rails
+
+Fermah Pay also supports a third arrangement: a direct, non-custodial payment, where a user's signed authorisation targets an application contract — a swap, for instance — and the operator only submits it. On EVM, that path is a central part of the product, because binding a payment's terms there takes a second signature and a relayer of its own.
+
+Stellar already does this natively. Soroban authorisation entries bind every argument of the call, a contract account with a relayer or a fee bump pays a seller directly without the user holding XLM, and x402's `exact` scheme settles one transfer per paid request. Rebuilding that would add nothing to the ecosystem. So the Stellar implementation concentrates on what those primitives do not provide — the seller's prepaid ledger, recurring mandates and batch settlement — and works alongside them: a buyer who pays some sellers directly and others through Fermah Pay uses the same wallet for both.

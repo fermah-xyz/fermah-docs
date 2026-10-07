@@ -6,37 +6,37 @@ title: "What the system cannot do"
 
 The claims worth making about a payment system are the negative ones. Not what it does, which is a matter of engineering, but what it is unable to do even when its own software is wrong, which is a matter of where the enforcement sits.
 
-Each property below names its enforcer, because a property enforced by Fermah's code and one enforced by the chain are different kinds of promise. The second survives Fermah having a bug. The first does not.
+Each property below names its enforcer, because a property enforced by Fermah's code and one enforced by the chain are different kinds of promise. The second survives Fermah having a bug. The first does not. The full threat model, party by party and key by key, is [published with the code](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/security/threat-model.md).
 
 ---
 
 ## Funds move only against the user's signature
 
-Enforced by Soroban's `require_auth` and the SAC's authorisation verification, not by Fermah.
+Enforced by Soroban's `require_auth` and the SAC, not by Fermah.
 
-Moving a user's USDC requires an authorisation entry that user signed, binding the contract, the function, every argument, and a single-use nonce. Fermah can submit one or not submit it. It cannot construct one, because that needs the user's private key, and it cannot modify one, because the signature would no longer verify against the claimed address. The Soroban runtime verifies the signature and checks the nonce against its own on-chain storage. Fermah's software being wrong does not weaken any of it.
+Moving a user's USDC out of their wallet requires an authorisation entry that user signed, binding the contract, the function, every argument, and a single-use nonce. Fermah can submit one or not submit it. It cannot construct one, because that needs the user's key, and it cannot modify one, because the signature would no longer verify. The Soroban runtime verifies the signature and checks the nonce against its own on-chain storage. Fermah's software being wrong does not weaken any of it.
 
-No standing authority exists to abuse either. The authorisation entry is consumed on use — the nonce is recorded and cannot be replayed. There is nothing sitting in storage between payments that a compromised gateway could later draw on. Each authorisation is one operation, once.
+A deposit is the transfer and the credit in one invocation, so there is no credit without the user's USDC arriving, and no USDC taken without the credit. A withdrawal needs the user's signature for the amount and destination. And a recurring charge can only pull what a mandate the user signed allows, period by period.
 
-This is the property everything else rests on, and it is why the system is not custodial at the point of payment. On the prepaid path the funds are in the treasury after the deposit, and that *is* custody; what the user's signature bounds there is the deposit, and what bounds Fermah afterwards is the next property.
+On the prepaid path the funds are in the treasury after the deposit, and that *is* custody; what bounds Fermah afterwards is the next property.
 
 ---
 
 ## Charges are bounded by numbers on the chain
 
-Enforced by the billing contract.
+Enforced by the ledger contract.
 
-A charge cannot exceed `maxChargePerTx`, cannot push an account past `dailyCapPerTenant`, and cannot push the system past `globalDailyCap`. Inside a batch an over-limit entry is skipped with its reason emitted, rather than reverting everyone else's charges; on the single-charge path it reverts. Either way no balance moves past the limit, and the day boundary that resets the accumulators is derived by the contract from `ledger.timestamp()`, not supplied by the caller.
+A charge cannot exceed the user's on-chain balance, cannot exceed `max_charge`, and, once daily limits are set, cannot take one user or the seller as a whole past their daily limit. Inside a batch an over-limit entry is refused with its reason, rather than reverting everyone else's charges; on its own it reverts. Either way no balance moves past the limit, and the day boundary that resets the counts is derived by the contract from ledger time, not supplied by the caller.
 
-So a compromised or buggy gateway cannot drain a prepaid balance faster than those numbers allow, and reducing that exposure means changing numbers on-chain rather than trusting Fermah's software. The caps bound charges, not credits: see the [contracts chapter](/fermah-pay/two-programs-on-the-blockchain#the-prepaid-ledger) for the asymmetry and what covers it.
+So a compromised operator key or a buggy gateway cannot drain a prepaid balance faster than those numbers allow, and reducing that exposure means changing numbers on-chain, with two of the admin's three keys, rather than trusting Fermah's software.
 
 ---
 
-## The relayed payment has no custody at all
+## A subscription cannot outlive what the user approved
 
-Enforced structurally, and verifiable by reading the chain.
+Enforced by the ledger contract and by the SAC itself.
 
-On the direct path the funds never enter Fermah's control. The signed authorisation targets the application contract directly, and the invocation tree includes the token transfer as a sub-invocation authorised by the user's signature. The application contract moves the user's USDC to itself and credits the output to the address in the authorisation entry. The gateway's own accounting is not in the path: it calls neither `credit` nor `charge_batch` and writes no balance row. A failed relay leaves nothing mis-moved, because nothing moved.
+A recurring charge is at most the mandate's amount, at most once per period, never before a period starts or after it ends, and never after the mandate's end ledger, at which point the SAC stops honouring the allowance on its own. A new mandate replaces the allowance rather than adding to it. And `revoke_recurring` sets the allowance to zero even while the contract is paused, so a user's way out never depends on Fermah or the admin.
 
 ---
 
@@ -44,60 +44,62 @@ On the direct path the funds never enter Fermah's control. The signed authorisat
 
 Enforced by Soroban's authorisation entry structure, which binds the full invocation tree.
 
-A Soroban authorisation entry covers the contract address, the function name, and every argument. For a swap, the minimum output to accept and the sponsor are all arguments to the application contract's function call. They are inside the signed invocation tree. A relayer that changes any of them produces a transaction whose authorisation entry no longer matches the user's signature — the Soroban runtime rejects it.
+A Soroban authorisation entry covers the contract address, the function name, and every argument. For a deposit, that is the seller's contract, the amount and the deposit identifier, and under it the transfer to the seller's own treasury. For a withdrawal, the amount and the destination. For a mandate, the amount, the period, the number of periods and the end ledger. A submitter that changes any of them produces a transaction whose authorisation no longer matches the user's signature, and the Soroban runtime rejects it. The gateway checks the same thing earlier, comparing every returned entry byte for byte with the one it prepared, so an altered entry never costs a fee.
 
-This is structurally stronger than the EVM version, where binding the application-level terms required a second EIP-712 signature over a separate struct and a nonce-sharing trick to make the two atomic. On Soroban, one signature covers everything.
+This is structurally stronger than the EVM version, where binding application-level terms required a second EIP-712 signature over a separate struct. On Soroban, one signature covers everything.
 
 ---
 
 ## A duplicate request cannot double-charge
 
-Enforced in three independent places, which is the honest way to describe it.
+Enforced in two independent places, one of them on-chain.
 
-The SDK retries only failures it can identify as transport-transient, and mints the idempotency key outside the retry loop so every attempt carries the same one. The gateway, on a repeated key whose canonical request hash matches, returns the first response's bytes without re-executing, and returns `AlreadyExists` when the same key arrives with a different body. The contract consumes each charge identifier once.
+The gateway records every charge with the seller's idempotency key. A repeated key returns the original charge without debiting again, even if the balance is now too low for a new one, and the same key with a different amount is refused. Two simultaneous requests with the same key do not race: the gateway locks the user's row before it looks the key up, so the second waits for the first to commit and then finds it.
 
-The concurrency case is where this kind of guarantee usually leaks, so it is worth being specific. Two simultaneous requests with the same key do not race: the handler takes `FOR UPDATE` on the account's balance row **before** it looks the key up, so the second caller blocks on that lock until the winner commits, then reads the winner's row on its own post-lock lookup and replays it. The guarantee is a lock ordering, not a hope about timing.
-
-Two boundaries belong here rather than in a footnote. The idempotency record lives 24 hours, so a retry a day later is a new request and can produce a second charge; that is the documented contract, and it is finite because storing every key forever is a database that only grows, not a payment guarantee. And a replay returns the original response rather than current state, so a charge that has since settled still replays as `AUTHORIZED`. That is deliberate: returning current state would mean a client that retried a dropped connection gets a different answer than the one it would have got, which breaks the property retries exist to provide. Reading current state is a separate call.
+The contract is the second place, and it does not depend on the first. A charge's on-chain identifier is derived from the idempotency key, and the contract records every identifier it settles and refuses it again. So a batch sent twice, a worker restarted mid-flight, or a database restored from an old backup still cannot settle the same charge twice. On testnet, a whole batch of 98 charges [sent a second time](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-09-29T051328-charge-batch-98-first-replayed.json) landed with every entry refused as a duplicate.
 
 ---
 
 ## The system's beliefs are continuously checked against the chain
 
-Enforced by a reconciler with no authority to paper over what it finds.
+Enforced by an observer that holds no key and cannot change a balance.
 
-Postgres is a cache and the chain is the truth. A worker compares them continuously, and its permissions differ by regime deliberately. A balance that disagrees is recorded and paged, not corrected, because the treasury's SAC balance is an aggregate with no event identity and writing it into the cache would double-credit a deposit mid-settlement. Repair belongs to the paths that carry an event's identity and can prove they have not already applied it; those also re-emit the webhook the product never received.
+Postgres is an admission view and the chain is the truth. The observer matches every contract event against the gateway's records and reconciles the treasury's USDC against what the contract owes, the contract's totals against its events, and both against the database. What it finds is appended as a finding no role can edit, and raised as an alert.
 
-And a charge on-chain that the gateway has no record of authorising is treated as what it looks like, a compromised operator key rather than a bug. After a debounce it halts the money movers while leaving detection running, so an operator can watch the incident rather than being blinded by the response to it.
+A charge on-chain that the gateway never admitted is treated as what it looks like, a compromised operator key rather than a bug: a critical `unknown_charge` finding within a minute, which was [drilled on testnet](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-10-06T162043-drill-operator-key.json) by charging a buyer with the operator's key outside the gateway. The response is a pause with the admin's keys, which stops the contract from moving money while the observer keeps watching and users can still revoke their mandates.
 
 ---
 
 ## Fermah's own spending is bounded
 
-Enforced by Postgres row serialisation, and by a floor that does not clear itself.
+Enforced by the contract, by Postgres row locks, and by a floor on the fee account.
 
-Every request that will cost fees is charged against a daily budget keyed to the address in the authorisation entry, before submission. The check and the debit are one conditional UPSERT: the `WHERE` clause tests `fee_spent + fee_reserved + projected <= budget` inside the same statement that debits, with the daily rollover folded in so the guarantee holds across midnight. N concurrent requests for one signer all serialise on that row and all but the fitting ones affect zero rows and reject. This is the difference between a bound and the appearance of one: a check followed by a separate debit is exactly what a burst defeats.
+Every deposit, withdrawal, mandate and revocation costs the operator a fee whatever its amount, so each is bounded:
 
-Below that, the fee account has a floor measured against unreserved *headroom*, balance minus committed reservations minus a carve-out reserved for the charge path, because funds already owed to queued work are not available to new work. When the floor is breached the gateway stops admitting and stays stopped. Clearing is a human action gated on a number the caller cannot supply: the server reads the account's XLM balance on-chain for that request, derives headroom, and refuses unless it clears the warning floor rather than the critical one it halted on, since clearing at critical would reopen admission with zero headroom and re-halt within a tick. A failed balance read answers `UNAVAILABLE` and leaves the halt in force, because an unknown balance is not a safe balance.
+- **A minimum deposit, on-chain,** so a deposit's fee stays a small share of it.
+- **Daily quotas** per user and per seller deployment, on new buyers, deposits, withdrawals and mandate changes, counted in the same transaction as the insert with the user's row locked, so N concurrent requests cannot all pass a quota that fits one of them. With the defaults, a deployment's deposits cost at most about 130 XLM a day, whatever the number of buyers.
+- **A cap on any user's transaction,** 1 XLM of resource fee by default. A smart wallet whose own code makes its transactions expensive is refused before anything is sent, and gets at most two restores per request.
+- **A cap on inclusion fees,** so congestion cannot make one envelope arbitrarily expensive.
+- **A floor on the fee account.** Below it the worker sends nothing new and only finishes the work already in flight.
+
+On testnet, a flood of deposits was [drilled](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-10-06T162414-drill-dust.json) until the deployment's quota refused one and the alert fired.
 
 ---
 
-## Test money and live money do not share a process
+## Testnet money and mainnet money do not share a process
 
-Enforced by process separation for the data, and by deployment configuration for the signing keys. Two different mechanisms, and it is worth saying which covers what.
+Enforced by process separation, and checked at startup.
 
-An API key belongs to one tier by prefix and a daemon serves one tier, so a test key reaches a process holding only test rows. No field in a request crosses that boundary, because the boundary is which process is listening.
+A seller deployment is pinned to one network and its keys carry that network in their prefix. A gateway serves one network and refuses to start unless its RPC endpoint reports that network's passphrase. So a testnet key reaches a process that only knows testnet buyers, and no field in a request crosses that boundary.
 
-The keys are a separate question. Each tier has its own signing key, and what keeps a test process from using a live one is the deployment configuration. The application does not check this and could not: a daemon handed the other tier's key would sign with it. So that half is a deployment property to configure and verify, not code to read. The gateway does verify at boot that each signer's derived address matches the configured address, so a mis-wired key fails the boot rather than reverting a money transaction later.
+Signing keys get the same treatment. Before building any transaction, the worker has each key sign a random payload and checks the signature against the account the key claims, and it checks every later signature again before it records or sends anything. A key wired to the wrong account, or a remote signer answering for the wrong key, signs nothing that is used.
 
 ---
 
 ## Every privileged action leaves a record that cannot be erased
 
-Enforced by Postgres privileges, not by application code.
+Enforced by the chain, and by Postgres.
 
-Calls on the product-facing interface write an audit row, and the runtime role holds `SELECT`, `INSERT` on that table and nothing else; `UPDATE` and `DELETE` are never granted. So a SQL injection sink anywhere in the gateway still cannot rewrite or remove history, because the privilege does not exist for the role the daemon connects as. History can be appended to and read. It cannot be edited.
+On-chain, every pause, limit change and role rotation emits a contract event, and every upgrade emits the network's own system event naming the old and the new code. None of them can be made without two of the admin's three keys, and none of them can be hidden: the observer reports each one, and raises a critical alert when the contract runs code other than the operator expects.
 
-Two precisions, because this is where the claim is usually overstated. The row records that a call was authenticated and dispatched to its handler, not what the handler returned, so a request refused downstream still shows as dispatched. And on the operator plane the policy is deliberately narrower: reads leave no row, while every write records its real outcome, including a `Failure` for a denied privilege, and commits its audit row in the same transaction as the mutation. So for the actions that change state there is no committed change without a record of who made it.
-
----
+Off-chain, a recorded transaction's envelope and hashes cannot be changed by the process that wrote them, a final outcome cannot be left, and both the observer's findings and an operator's resolution of a quarantined charge are append-only for every database role, the owner included. History can be appended to and read. It cannot be edited.
