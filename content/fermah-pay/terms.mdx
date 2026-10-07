@@ -12,9 +12,15 @@ Every term this book uses, in the sense it uses them. No blockchain background i
 
 **Fee-bump transaction.** A Stellar protocol primitive that wraps an inner transaction inside an outer envelope. The outer envelope's `fee_source` pays the fee. The inner transaction's operations execute as signed. No smart-contract infrastructure needed.
 
+**Commitment.** In Fermah Pay's x402 interface, a short message a buyer signs with its Stellar key (SEP-53) for one paid request: the seller, the amount and an expiry. Settling it debits the buyer's prepaid balance once.
+
 **Confirmation.** On Stellar, immediate. A transaction included in a closed ledger is final. There is no confirmation-depth wait, no provisional period, and no risk of the ledger being replaced.
 
-**Custody.** Holding someone else's funds. The prepaid arrangement is custodial after the deposit, since the USDC is in the treasury the operator controls. The direct arrangement is not, at any point.
+**Contract account.** A Stellar account that is a contract (a `C...` address), such as a smart wallet, whose own `__check_auth` decides what counts as its signature: a passkey, several signers, a spending policy. Fermah Pay accepts contract accounts as buyers.
+
+**Cold reserve.** An account that needs several signatures to move anything, holding the treasury's USDC beyond what day-to-day operations need.
+
+**Custody.** Holding someone else's funds. The prepaid arrangement is custodial after the deposit, since the USDC is in the treasury the operator controls. In the recurring arrangement the USDC stays in the user's wallet until each period is charged.
 
 **Expiration ledger.** The ledger sequence at which a SAC allowance or a Soroban authorisation entry expires. After this ledger, the allowance is invalid and `transfer_from` calls against it revert. Enforced by the protocol, not by application code.
 
@@ -24,26 +30,42 @@ Every term this book uses, in the sense it uses them. No blockchain background i
 
 **getEvents.** Soroban RPC method for reading contract events from closed ledgers. Filtered by contract address and event topic.
 
-**Idempotency key.** A caller-supplied value that marks a request as the same one on a retry. The gateway returns the first response's bytes for a matching repeat, for 24 hours.
+**Idempotency key.** A caller-supplied value that marks a request as the same one on a retry. The gateway returns the original deposit, charge or withdrawal for a matching repeat, and the contract identifier of a charge is derived from it.
+
+**Mandate.** A buyer's signed authorisation for recurring charges: up to an amount per period, for a number of periods, until an end ledger, backed by a SAC allowance to the ledger contract. Revocable at any time.
 
 **Ledger sequence.** Stellar's equivalent of a block number. Ledgers close every ~5 seconds. Each is final.
 
 **Nonce.** In a Soroban authorisation entry, a unique value recorded on-chain as TEMPORARY contract data when the authorisation is consumed. Prevents replay. Garbage-collected by the ledger after TTL expiry.
 
-**Reconciliation.** Comparing what the gateway believes against what the chain says, continuously, and either repairing the difference or paging a human.
+**Observer.** Fermah Pay's key-less process that reads every contract event, matches it against the gateway's records, and reconciles the treasury, the contract and the database.
+
+**Quarantine.** The state of a charge whose outcome cannot be established from the contract's records or events. It waits for an operator rather than being guessed at.
+
+**Reconciliation.** Comparing what the gateway believes against what the chain says, continuously, and recording and alerting on any difference.
 
 **require_auth.** Soroban's authorisation primitive. A contract function that calls `require_auth(address)` requires the transaction to carry a valid signed authorisation entry from that address, covering the exact invocation.
 
 **SAC.** Stellar Asset Contract. The Soroban interface for Stellar's native assets, including USDC. Exposes `transfer`, `approve`, `transfer_from`, `balance`, and other functions as Soroban contract calls.
 
+**Seller deployment.** One seller's instance of the system: its ledger contract, treasury and buyers, pinned to one Stellar network, with its own API keys.
+
 **Soroban.** Stellar's smart contract platform. Contracts are written in Rust, compiled to Wasm, and deployed on the Stellar ledger.
 
-**Tenant.** One end-user account inside a product, as the gateway sees it. A prepaid balance belongs to one.
+**Sponsored reserves.** A Stellar protocol feature (CAP-33) by which one account pays the reserves of another, so a buyer's account can exist with a zero XLM balance.
 
-**Treasury.** An account the operator controls that holds deposited USDC as a SAC balance. The billing contract is a separate accounting ledger and holds no USDC itself. Both are distinct from the fee account, which pays XLM for transaction fees.
+**Submitter.** The account that signs and sequences a transaction. In Fermah Pay it is separate from both the user who authorises the call and the fee account that pays for it.
+
+**TEMPORARY storage.** Soroban contract storage that expires after its time-to-live and is never restored. Fermah Pay keeps charge records there for a bounded window, which is all replay protection needs.
+
+**TTL.** Time-to-live: how many ledgers a Soroban entry has left before it is archived, extended by paying rent.
+
+**Treasury.** An account the operator controls that holds deposited USDC as a SAC balance. The ledger contract is a separate accounting ledger and holds no USDC itself. Both are distinct from the fee account, which pays XLM for transaction fees.
 
 **USDC.** A token redeemable one-for-one for US dollars, issued by Circle. Seven decimals on Stellar. The currency this system moves.
 
-**Webhook.** An HTTP request the gateway sends a product to report something that happened after the original request was answered. Signed, because an unsigned webhook is an anonymous HTTP request until something makes it otherwise.
+**Webhook.** An HTTP request a service sends a product to report something that happened after the original request was answered. Fermah Pay's Stellar implementation reports results by query instead; see [what the product is told](/fermah-pay/software-around-the-signature#what-the-product-is-told).
+
+**x402.** An open protocol for paying for HTTP requests, built on the `402 Payment Required` status. A facilitator verifies and settles each payment for the server selling the resource.
 
 **XLM.** Stellar's native currency. Transaction fees are paid in XLM. Users of Fermah Pay never hold or spend XLM — the operator pays fees via fee-bump transactions.

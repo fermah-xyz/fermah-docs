@@ -1,81 +1,84 @@
 ---
-title: "Two programs on the blockchain"
+title: "The contract on the blockchain"
 ---
 
-# The two programs on the blockchain
+# The contract on the blockchain
 
-Two contracts carry the money logic, for the two things a payment system charges for. One is a prepaid credit ledger for many small charges. The other is recurring billing.
+One Soroban contract carries the money logic, and one instance serves each seller. It is a prepaid credit ledger for many small charges, and it runs the recurring mandates as well, so a seller's buyers, balances and subscriptions live in one place that the seller reconciles.
 
-They are at different stages. The billing contract is designed and exercised against its test suite, with deployment to Stellar testnet as the first tranche deliverable. The subscription manager is designed and proven against its test suite, with deployment following in the second tranche. The EVM equivalents of both are production code: the billing contract runs on mainnet, and the subscription manager is written, reviewed, and tested but not yet deployed. This chapter describes the Soroban contracts as designed, and the book would rather say that than let a reader assume they are running.
+It runs on Stellar testnet as [`CD3GESMYMJ3MNWNSKS6P7TEDHL5HYEWSGTFX7A3ENDB5MXTQ5TED7PSI`](https://stellar.expert/explorer/testnet/contract/CD3GESMYMJ3MNWNSKS6P7TEDHL5HYEWSGTFX7A3ENDB5MXTQ5TED7PSI). Its [source](https://github.com/fermah-xyz/fermah-pay-stellar/tree/main/contracts/prepaid) and [full design](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/architecture/prepaid-contract.md) are public, and the code it runs can be fetched from the network and hashed against the Wasm the public CI builds.
 
 ---
 
 ## The prepaid ledger
 
-The billing contract holds no USDC. It is a pure credit ledger of prepaid balances, keyed by account identifier; a separate treasury account holds the deposited USDC. Two operations matter: `credit`, which records a confirmed deposit, and `charge_batch`, which debits many accounts in one call.
+The contract holds no USDC. It records each buyer's prepaid credit and the seller's earned revenue; a separate treasury account holds the deposited USDC. Keeping the funds out of the contract is deliberate: a defect in the contract's logic cannot move USDC it does not hold.
 
-Two dedup properties are enforced by the contract rather than by the gateway.
+A deposit is one invocation. `deposit(owner, amount, deposit_id)` moves the USDC from the buyer to the treasury through the SAC and credits the buyer, together, under the buyer's own signature. The contract does not take anyone's word that a deposit happened: it performs the transfer itself, and if the transfer fails, nothing is credited. Each `deposit_id` is processed once, so a deposit cannot be credited twice. A withdrawal is the mirror image: one invocation that debits the credit and moves the USDC from the treasury to the destination.
 
-A deposit cannot be credited twice. Each `credit` names the transaction hash of the deposit that justifies it, the contract records processed hashes, and a repeat reverts. So a gateway bug that submits the same credit twice, or an operator who tries to, credits once.
+Because the treasury's key could still move USDC without calling the contract, the contract keeps two totals on-chain, `liabilities` (every buyer's balance) and `revenue` (charged, not yet paid out), so that anyone can compare them with what the treasury holds. The observer in [the software around the signature](/fermah-pay/software-around-the-signature#comparing-beliefs-against-the-chain-continuously) does that continuously, and on testnet the comparison is [recorded](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-09-29T051046-treasury-solvency.json) from the network.
 
-What that does not do, and it is the right thing to be explicit about, is prove the deposit happened. The hash is an opaque `BytesN<32>`: the contract checks that the value is new, not that it names a real transfer. So the operator is trusted to credit only against deposits it actually received. That is the one place the prepaid arrangement rests on the operator rather than on the chain, and it follows from the ledger being an accounting contract separate from the funds. The contract cannot independently verify that a SAC `transfer` into the treasury actually occurred from a specific user — it can only verify that the operator claims it did. What makes that trust observable rather than blind is the reconciliation described in [the software around the signature](/fermah-pay/software-around-the-signature#comparing-beliefs-against-the-chain-continuously). It compares the total USDC held in the treasury against what the gateway's own records account for, and a divergence past 100 USDC is raised for a human rather than absorbed. The spending caps below bound the damage in the meantime.
+A charge cannot be applied twice, and the way it is refused is worth noting. Each charge carries the seller's 32-byte identifier and the last ledger in which it may settle. The contract records every charge it settles, with its outcome, in TEMPORARY storage that lives until shortly after that last ledger, and a charge whose identifier is recorded is a `Duplicate` and never debits again, even if the buyer has since added funds. By the time a record expires, the charge it records is past its last ledger and refused as `Expired`, so a replay is refused at any time. TEMPORARY storage also keeps the rent bounded: a record costs rent once, for a window, not forever.
 
-A charge cannot be applied twice either, and the way it fails is worth noting. Each charge carries its own `BytesN<32>` identifier, consumed on first use. Inside `charge_batch` an already-consumed identifier is skipped silently with no event, which is what lets the gateway resubmit a batch it is unsure landed; submitted through the single-charge function the same identifier reverts. Re-attempting a charge that was genuinely refused requires a fresh identifier, because the old one is spent either way.
+The batching behaviour matters for the same reason. `charge_batch` settles up to 98 charges and returns one outcome per entry: `Charged`, `InsufficientBalance`, `AboveLimit`, `AboveDailyLimit`, `UnknownAccount`, `Duplicate` or `Expired`. One bad entry does not revert the others, so one underfunded buyer cannot fail everyone else's charges in the same batch. Only a malformed batch reverts as a whole. And while a record lives, it also answers, from the contract itself, what happened to a charge whose transaction's fate is unknown, which is what lets the worker resolve a lost submission without guessing.
 
-The batching behaviour matters for the same reason. One bad entry, an account with insufficient coins for instance, does not revert the other entries. It emits a failure event carrying a typed reason from a four-variant enum, and the loop continues. The gateway reads that reason and credits the cached balance back. Without it, one underfunded account would fail everyone else's charges in the same batch. Two whole-batch reverts do exist, and both are shape errors rather than money errors: mismatched array lengths, and a batch above the hundred-entry maximum.
+The ceiling of 98 is not arbitrary. Stellar limits a transaction to 200 ledger-entry writes. A charge to a distinct buyer writes two entries, the account and the record, so 98 charges write 196, plus the contract instance and the operator's nonce: 198. At 100 the network refuses the transaction.
 
 ---
 
-## Three ceilings the operator cannot exceed
+## Ceilings the operator cannot exceed
 
-The contract enforces three spending limits, and this is what bounds Fermah's own authority over a prepaid balance.
+The contract enforces the limits that bound the operator's authority over a prepaid balance:
 
-A per-transaction maximum, refusing `amount > maxChargePerTx`. A per-account daily maximum, refusing when `dailyTenantCharged + amount > dailyCapPerTenant`. And a global daily maximum across all accounts, refusing when `globalDailyCharged + amount > globalDailyCap`. The day boundary is derived by the contract itself as `ledger.timestamp() / 1 days`, and the accumulators reset when the stored day marker no longer matches, so the reset needs no operator action and cannot be skipped.
+- **Per charge.** A charge above `max_charge` is refused.
+- **Per buyer, per day.** A charge that would take one account past its daily limit is refused as `AboveDailyLimit`.
+- **Per seller, per day.** A charge that would take all accounts together past the seller's daily limit is refused the same way.
+- **Minimum deposit.** A deposit below `min_deposit` is refused, so a flood of dust deposits cannot cost the operator more in fees than it brings in.
 
-An over-limit charge does not go through, and the failure is not advisory. Inside a batch the entry is skipped with its reason emitted, for the same reason an underfunded account skips rather than reverting everyone else; on the single-charge path it reverts outright. Either way no balance moves past the limit, and the day boundary that resets the accumulators is derived by the contract from `ledger.timestamp()`, not supplied by the caller.
+The day is derived by the contract itself from ledger time, and the counts start again each day without any operator action. Each account's count lives in the account entry a charge already writes, so the limits add no ledger writes to a full batch.
 
-So a compromised or buggy gateway cannot drain a prepaid balance faster than those numbers allow, and reducing that exposure means changing numbers on-chain rather than trusting Fermah's software.
-
-One asymmetry belongs here because a careful reader will find it. These ceilings bound charges. `credit` has no ceiling of its own, so what the caps limit is the rate at which value leaves an account, not the amount that can be credited into one. Which is why the credit path's honesty rests on the reconciliation above rather than on a number in the contract.
+An over-limit charge does not go through, and the refusal is not advisory: inside a batch the entry is refused with its reason, on its own the call reverts. So a compromised or buggy gateway cannot drain a prepaid balance faster than those numbers allow, and reducing that exposure means changing numbers on-chain rather than trusting Fermah's software.
 
 ---
 
 ## Access control and upgradeability
 
-Access control uses a custom Soroban admin pattern with two roles. An operator role can `credit` and `charge_batch`. A separate admin role can pause the contract, adjust the three ceilings, and authorise an upgrade. Every money-moving function checks the operator role plus a `when_not_paused` guard.
+Five roles. The four the contract is created with, admin, operator, seller and treasury, must be four distinct addresses, because each authorises something the others must not be able to do alone:
 
-The contract is upgradeable via `update_current_contract_wasm`, which is a real trade-off worth naming rather than glossing: it means a defect can be corrected without migrating every account, and it means the admin is a party with meaningful power. Which is precisely why the key that signs day-to-day transactions and the key that can change the rules are different roles.
+| Role | Authorises |
+|---|---|
+| Buyer | its own `deposit`, its side of `withdraw`, its mandate and its revocation |
+| Treasury | its side of `withdraw`, and paying out revenue |
+| Operator | `charge`, `charge_batch`, `charge_recurring_batch` |
+| Seller | its side of paying out revenue |
+| Admin | `pause`, `unpause`, the limits, `upgrade`, and every role rotation |
 
-The money invariants here are not only unit-tested. A property-based test suite using `proptest` exercises them over randomised inputs, so properties like "a charge never underflows a balance", "a credit moves the balance by exactly the credited amount" and "a duplicate identifier cannot debit twice" hold for a range of inputs rather than for hand-picked cases, and the suite is a required CI gate.
+A rotation needs both the admin's authorisation and the new holder's, so a role cannot be handed to an address nobody controls, and after `set_operator` the previous operator can no longer charge. On testnet the admin is an account that needs [two of its three keys](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-09-30T041524-admin-multisig.json) for any change, each signing on its own, and one key alone is refused before anything is sent.
 
----
+The contract is upgradeable via `update_current_contract_wasm`, which is a real trade-off worth naming rather than glossing: it means a defect can be corrected without migrating any account, and it means the admin holds power over what every balance means. That is why the admin is a multisig kept apart from the keys that operate day to day, and why every administrative change is visible. A pause, a limit change and a rotation each emit an event, an upgrade emits the network's own system event naming the old and the new code, and the observer raises an alert on each, including for code other than what the operator expects. On testnet the contract was [upgraded in place](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-10-01T0905-admin-upgrade-two-signatures.json) with two of the three keys, balances untouched, and the running code hashes to the Wasm built by the public CI.
 
-## Recurring billing via SAC approve
-
-The subscription system takes a different approach, and the difference is that it is simpler by construction.
-
-A subscriber calls the SAC's `approve` function to grant the billing contract an allowance: a maximum USDC amount it may pull, expiring at a specific ledger sequence. The subscriber signs one Soroban authorisation entry for this `approve` call. From then on the gateway calls the billing contract's `charge_subscription` function on schedule.
-
-The contract checks every constraint at charge time: `amount <= remaining_allowance`, `current_ledger <= expiration_ledger`, and `ledger.timestamp() >= lastChargedAt + interval`. A charge violating any of these reverts.
-
-What the subscriber signs, once, is the whole of what the gateway may later do:
-
-```
-    approve(
-        spender: billing_contract,   // who may pull
-        amount: 500_000_000,         // ceiling, 500 USDC (7 decimals)
-        expiration_ledger: 12345678  // authority dies at this ledger
-    )
-```
-
-The contract reads `expiration_ledger` from the SAC's allowance data. A charge after the allowance has expired reverts because the SAC itself rejects the `transfer_from`. No Fermah code needs to check it — the protocol enforces it.
-
-Only the subscriber can create or cancel their own subscription. When the gateway forwards either operation it carries the subscriber's authorisation entry, and the contract calls `require_auth` on the subscriber's address. An authorisation entry signed by a different key reverts with a distinct error, kept separate from a malformed-signature error so the gateway can tell "bad signature" from "wrong signer".
-
-This contract is deliberately **not** upgradeable. There is no proxy in front of it, no `update_current_contract_wasm` call authorised, which means the terms a subscriber approved cannot be reinterpreted later by changing the code.
-
-That choice costs something real: a defect cannot be patched in place. It is the right cost for code that controls allowances over users' accounts.
-
-Operator key rotation and an emergency stop therefore live in a separate registry contract that the billing contract consults at the top of every privileged call. So the operating key can be rotated and privileged operations halted without redeploying the subscription contract or asking a single subscriber to re-approve.
+The money invariants are not only unit-tested. A property-based test using `proptest` runs random sequences of deposits, charges, withdrawals, mandates, recurring charges and changes of day against the contract, and after every step compares it with an independent model written from the documented rules rather than from the contract's code: every balance, wallet and allowance, liabilities equal to the sum of balances, revenue, and the treasury's USDC. The contract tests sign with real Ed25519 keys and have the Soroban host verify every authorisation.
 
 ---
+
+## Recurring charges via SAC approve
+
+The recurring mandates live in the same contract, and their design is simpler by construction.
+
+A subscriber signs one authorisation for `authorize_recurring`, which records the mandate and, in the same signed tree, calls the SAC's `approve` to grant the contract an allowance: up to the mandate's total, expiring at a specific ledger. From then on the operator charges each period with `charge_recurring_batch`, up to 35 per transaction, the most that fit Stellar's 16 KB of contract events per transaction.
+
+What the subscriber signs, once, is the whole of what the operator may later do:
+
+```
+    authorize_recurring(owner, mandate_id, amount, period_secs, cycles, live_until)
+      └─ usdc.approve(
+             from:    owner,
+             spender: ledger_contract,   // only this contract's code may pull
+             amount:  amount × cycles,   // the mandate's total
+             expiration_ledger: live_until  // authority dies at this ledger
+         )
+```
+
+The contract checks every charge against the mandate: the period has started and has not ended, it was not already charged, the amount is within the mandate, and the mandate has not expired. The SAC itself refuses a pull past `expiration_ledger`, so no Fermah code needs to enforce it — the protocol does.
+
+Only the subscriber can create or cancel their own mandate, since each carries the subscriber's authorisation entry. `revoke_recurring` sets the allowance back to zero and works even while the contract is paused, so a subscriber's way out never depends on the admin. On testnet, a subscriber holding 0 XLM [authorised a mandate, was charged two periods](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-10-01T034500-recurring-end-to-end.json), saw an early charge and a charge after the mandate ended both refused on-chain, and revoked back to zero.

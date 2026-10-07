@@ -6,33 +6,102 @@ title: "Overview"
 
 ## Overview
 
-Fermah Pay is a billing system for services that charge per request. A buyer funds a prepaid balance once, in USDC. The seller draws it down as the buyer uses the service. The buyer holds no XLM and signs once. The operator submits every transaction and pays the fees.
+Fermah Pay is billing infrastructure for services that charge per request: APIs, AI agents, proving networks, streams. A buyer funds a prepaid USDC balance with one signature, without ever holding XLM. The seller charges that balance as the buyer uses the service, and the charges settle on-chain in batches. Fermah Pay runs in production on an EVM-compatible chain, where it settles real USDC for Fermah's proof marketplace. On Stellar it is a Soroban contract and a set of open-source services that any seller can run.
 
-It runs in production today on an EVM-compatible chain, where it settles real USDC charges for Fermah's proof marketplace. This grant ports it to Soroban and turns it from an internal tool into a component other Stellar sellers can run.
-
-**What it adds to Stellar.** Stellar already has what one buyer needs: a contract account can hold funds and enforce spending rules, a relayer can pay fees, and SAC allowances bound a recurring pull. What it does not have is the seller's side. A service billing a thousand buyers with contract accounts alone has a thousand accounts to charge, reconcile, and retry. Fermah Pay is one ledger instead. One contract holds every buyer's balance. One call charges up to a hundred buyers at once. The seller reconciles one contract, not a thousand accounts. It sits behind an x402 facilitator — it is the account layer a facilitator settles against, not a facilitator itself.
-
-**What this grant builds.** A good portion of the system is ported and adapted from the EVM production version, which de-risks delivery — the daemon, workers, reconciler logic, and SDK carry over. The new work is the contracts and the Soroban-specific chain code: the genuinely new engineering this grant funds.
-
-| New for Soroban | Ported and adapted from EVM production |
-|---|---|
-| Prepaid ledger contract | Settlement daemon (batch, submit, reconcile loop) |
-| Recurring-charge contract (SAC approve + expiration) | Background workers (claim → submit → settle) |
-| x402-compatible settlement interface | Reconciler logic (three regimes) |
-| Soroban auth entries + fee-bump submission | Webhook delivery, idempotency, gateway |
-| getEvents cursor (replaces eth_getLogs + reorg handling) | TypeScript SDK core |
-| TTL / state-rent handling | |
-
-The EVM system is live; the Soroban contracts are designed and tested against their suites but not yet deployed. Deploying them to testnet, then mainnet, is what the tranches fund.
-
-**How to read this document.** This overview is the scope. Everything below is the detailed design, and the properties the system enforces even when its own software is wrong. To assess scope, this section is enough. To check the engineering, read on.
+- **Code:** [github.com/fermah-xyz/fermah-pay-stellar](https://github.com/fermah-xyz/fermah-pay-stellar), Apache-2.0.
+- **Running on testnet:** the prepaid ledger contract [`CD3GESMYMJ3MNWNSKS6P7TEDHL5HYEWSGTFX7A3ENDB5MXTQ5TED7PSI`](https://stellar.expert/explorer/testnet/contract/CD3GESMYMJ3MNWNSKS6P7TEDHL5HYEWSGTFX7A3ENDB5MXTQ5TED7PSI), against Circle's testnet USDC.
+- **Every claim checkable:** each testnet transaction behind this page is listed, with its hash, in the [evidence index](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/README.md).
 
 ---
 
-The rest of this document is the full design, written for a technically literate reader with no prior exposure to the system. Where a standard or a term is needed it is named and explained — a claim you cannot check is not worth much — and every one is collected in [terms](/fermah-pay/terms#terms).
+## Architecture at a glance
 
-Read it in order. [Money you cannot move](/fermah-pay/money-you-cannot-move#money-you-cannot-move) is the problem, and it is not the one people expect: paying a user's fees is easy, and paying them without taking authority over their funds or their payment's terms is not. [Authorising and submitting are different acts](/fermah-pay/authorising-and-submitting#authorising-and-submitting-are-different-acts) is the mechanism, one payment end to end, and the chapter to read if you read one. [Two ways money moves](/fermah-pay/two-ways-money-moves#two-ways-money-moves) covers the prepaid and direct arrangements, which differ in whether Fermah ever holds the funds. [The software around the signature](/fermah-pay/software-around-the-signature#the-software-around-the-signature) is where most of the engineering actually went, none of it cryptographic. [The two programs on the blockchain](/fermah-pay/two-programs-on-the-blockchain#the-two-programs-on-the-blockchain) describes what each contract enforces and which is live today, and [what the system cannot do](/fermah-pay/what-the-system-cannot-do#what-the-system-cannot-do) states the properties and names what enforces each.
+```
+    seller ── gRPC / x402 + API key ──► GATEWAY ──► Postgres ◄── WORKER ──► Stellar RPC
+                                           ▲                       │
+    buyer wallet ── signs one Soroban      │                       ▼
+                    authorization entry ───┘        PREPAID LEDGER CONTRACT ──► USDC (SAC)
+                                                    balances, charges,        held by a separate
+                                                    mandates, limits          treasury account
+                                                           │
+                                     OBSERVER ◄── getEvents┘  key-less: matches every event,
+                                                              reconciles treasury vs. contract vs. DB
+```
 
-This document describes Fermah Pay as designed for Stellar, ported from a system that runs in production on an EVM-compatible chain. Every behaviour in the gateway, the workers, the reconciler, the webhooks, and the daemon structure is read from the running EVM code. The Soroban contract designs are proven against their test suites but not yet deployed. Where something is designed but not deployed, the text says which.
+- **Prepaid ledger contract (Soroban).** One instance per seller. It records each buyer's credit and the seller's revenue. The USDC sits in a separate treasury account, so the contract never holds funds. Deposits and withdrawals move USDC and update the ledger in the same invocation. Charges settle in batches of up to 98, and every charge identifier is recorded so it can never debit twice. The same contract runs recurring mandates over SAC allowances.
+- **Gateway.** The seller-facing API: gRPC, and an x402 facilitator interface over HTTP. It registers buyers, prepares the authorizations buyers sign, verifies what they return, and admits charges against the buyer's balance in milliseconds. It holds no signing key.
+- **Worker.** The only process that signs and sends transactions. It submits through fee bumps from an operator-funded account, records every envelope before sending it, and decides every outcome from the ledger itself.
+- **Observer.** A key-less process. It reads every contract event through `getEvents`, matches each against the gateway's records, and continuously reconciles the treasury's USDC, the contract's totals and the database, with alerts for each threat in the threat model.
+
+The buyer signs one authorization entry. The operator submits it and pays every fee. Nobody but the buyer can change what it does.
 
 ---
+
+## What Stellar provides, and what Fermah Pay adds
+
+Stellar already has strong primitives for the buyer's side of a payment, and Fermah Pay builds directly on them:
+
+- **Contract accounts (C addresses).** Smart wallets with custom authorization (`__check_auth`), passkeys and wallet-side spending policies, with more wallet work underway through the SCF wallet RFPs around SEP-41 tokens.
+- **Relayers and fee bumps (CAP-15).** A user can transact while someone else pays the fee.
+- **Sponsored reserves (CAP-33).** An account can exist with a zero XLM balance.
+- **The Stellar Asset Contract (SEP-41).** USDC as a Soroban token, with `approve` and an `expiration_ledger` that bounds an allowance.
+- **x402 on Stellar.** The `exact` scheme settles one SEP-41 transfer per paid request.
+
+Composed, these let one buyer pay one seller for one request without holding XLM. What they do not give is the **seller's side**. A seller billing a thousand buyers with these primitives alone has a thousand on-chain transfers per round of requests, a thousand retry paths where a retried request must never pay twice, and a thousand accounts to reconcile. For sub-cent API calls, a transfer per request also puts fees and confirmation latency in the path of every call.
+
+Fermah Pay is that seller's side:
+
+1. **One prepaid ledger per seller.** Buyers deposit once and are drawn down per request. Charges answer immediately and settle on-chain later.
+2. **Batch settlement.** One `charge_batch` transaction settles up to 98 charges, the most that fit Stellar's 200 ledger-entry writes per transaction. Measured on testnet: 98 times fewer transactions and about 2.3 times lower fee per charge.
+3. **Replay protection in the contract.** Every charge carries an identifier and a deadline. The contract records each one, so a retried or replayed batch can never debit twice. On testnet, a whole 98-charge batch sent a second time came back as 98 duplicates, with nothing debited.
+4. **Outcomes proven from the ledger.** Every envelope is recorded before it is sent, and a transaction of unknown fate is decided only from contract state and events, never guessed. An independent observer checks every decision.
+5. **An x402 facilitator interface.** `/verify`, `/settle` and `/supported` over x402's `batch-settlement` scheme, where the buyer's prepaid balance backs each signed per-request commitment. Fermah Pay is the account and settlement backend a facilitator calls. It complements wallets and the `exact` scheme rather than competing with them.
+6. **Recurring charges.** One buyer signature authorizes a mandate, bounded on-chain per period and in time, over a SAC allowance the buyer can revoke at any moment.
+
+Buyers keep their wallets. A classic `G` account works, and so does a contract account: a smart wallet from the wallet RFPs can fund and use a seller's ledger directly, with its signature checked by the network itself before the operator spends a fee on it.
+
+---
+
+## Net new versus the internal EVM tool
+
+On EVM, Fermah Pay serves one first-party product, our own, which calls the billing system directly. Turning it into infrastructure that third-party sellers and operators run on Stellar is new work:
+
+| Net new | Why the internal tool did not need it | Status |
+|---|---|---|
+| **Soroban chain layer:** authorization entries (including contract-account buyers), fee-bump submission, a `getEvents` cursor, TTL and rent with archived-entry restoration, TEMPORARY charge records | EVM has account nonces, `eth_getLogs` and permanent storage | Delivered, [Tranche 1](#delivered-and-verifiable) |
+| **External x402 facilitator interface:** `/verify`, `/settle`, `/supported`, `batch-settlement` binding, black-box conformance harness | No external facilitator ever called in | Delivered, [Tranche 2](#delivered-and-verifiable) |
+| **Per-seller limits and dust-deposit defense:** on-chain per-charge and daily limits per buyer and per seller, a minimum deposit, per-buyer and per-deployment quotas, a cap on what any buyer's transaction can cost the operator | One first-party seller with known usage | Delivered, Tranches 1 and 2 |
+| **Hardened, configurable key management for third-party operators:** separate roles, a 2-of-3 admin, a cold reserve, keys in AWS KMS or in any HSM or key store through a remote-signer interface | One operator: us | Delivered, Tranches 1 and 2 |
+| **Seller-facing SDK** (TypeScript, Apache-2.0) | Our product called the server directly | Tranche 3 |
+
+The batching, durable submission and reconciliation concepts are adapted from the EVM system rather than costed as new.
+
+---
+
+## Delivered and verifiable
+
+Everything below runs on Stellar testnet against Circle's testnet USDC. Each item links to its code, tests and on-chain records.
+
+**Tranche 1: the prepaid ledger, proven end to end**
+- [Prepaid ledger contract](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/architecture/prepaid-contract.md) and its [source](https://github.com/fermah-xyz/fermah-pay-stellar/tree/main/contracts/prepaid), with unit and property-based tests.
+- 100 buyers onboarded holding 0 XLM, 100 deposits each authorized by one signature, [one transaction charging 98 buyers](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-09-29T050954-charge-batch-98-first.json), the same batch [replayed and refused](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-09-29T051328-charge-batch-98-first-replayed.json), and [treasury solvency](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-09-29T051046-treasury-solvency.json) read from the network.
+- The [end-to-end integration test](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/README.md#api-end-to-end-on-testnet): a 0-XLM buyer deposits, three charges settle, a duplicate is refused on-chain. It runs in CI against testnet and against a local network.
+- A [load test](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-09-30T055844-load-test.json): 1,000 charges admitted at about 84 per second, all settled in 11 batches.
+
+**Tranche 2: recurring charges, x402 and hardening for untrusted parties**
+- [Recurring mandates](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/api/recurring.md), [running on testnet](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-10-01T034500-recurring-end-to-end.json): periods charged without the buyer signing again, early and late charges refused on-chain, revocation back to zero.
+- [x402 facilitator interface](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/api/x402.md) and its [conformance run](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-10-01T054928-x402-conformance.json): 25 cases, with every request and response published.
+- [Contract-account (smart wallet) buyers](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-10-01T173346-contract-account-buyer.json): deposit, charge and withdrawal from a C address.
+- [Threat model](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/security/threat-model.md), [monitoring plan](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/monitoring-plan.md) with Prometheus alerts and a Grafana dashboard, and [drills](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/monitoring-drills.md) that provoke each threat on testnet and record the alert firing.
+- [Limits against untrusted buyers and sellers](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/limits.md) and [key management](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/keys.md) for operators.
+- The contract's code, upgraded in place with two of the admin's three keys, [hashes to the Wasm CI builds](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/README.md#deployed-contracts-testnet) from the public repository.
+
+Next: a testnet integration with an ecosystem partner and a live 30-day mandate, then mainnet and the TypeScript SDK in Tranche 3. To run it yourself, the [testnet quickstart](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/quickstart/testnet.md) goes from a fresh clone to a deposit, charges and a withdrawal in minutes.
+
+---
+
+## Design in depth
+
+The chapters that follow are the long-form design, written for a technically literate reader with no prior exposure to the system. Every standard and term is named and explained, and collected in [terms](/fermah-pay/terms#terms).
+
+[Money you cannot move](/fermah-pay/money-you-cannot-move#money-you-cannot-move) is the problem, and it is not the one people expect. [Authorising and submitting are different acts](/fermah-pay/authorising-and-submitting#authorising-and-submitting-are-different-acts) is the mechanism, one payment end to end. [Two ways money moves](/fermah-pay/two-ways-money-moves#two-ways-money-moves) covers prepaid balances and recurring mandates. [The software around the signature](/fermah-pay/software-around-the-signature#the-software-around-the-signature) and [the shape of the system](/fermah-pay/shape-of-the-system#the-shape-of-the-system) are where most of the engineering went. [The contract on the blockchain](/fermah-pay/two-programs-on-the-blockchain#the-contract-on-the-blockchain) describes what the contract enforces, and [what the system cannot do](/fermah-pay/what-the-system-cannot-do#what-the-system-cannot-do) states each guarantee and names what enforces it.

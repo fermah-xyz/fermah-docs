@@ -4,6 +4,10 @@ export default {
   index: {
     title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:house-duotone" width={18} /> Overview</span>
   },
+  '-- design-in-depth': {
+    type: 'separator',
+    title: 'Design in depth'
+  },
   'money-you-cannot-move': {
     title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:coin-vertical-duotone" width={18} /> Money you cannot move</span>
   },
@@ -20,7 +24,7 @@ export default {
     title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:squares-four-duotone" width={18} /> Shape of the system</span>
   },
   'two-programs-on-the-blockchain': {
-    title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:file-code-duotone" width={18} /> Two programs on the blockchain</span>
+    title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:file-code-duotone" width={18} /> The contract on the blockchain</span>
   },
   'what-the-system-cannot-do': {
     title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:lock-key-duotone" width={18} /> What the system cannot do</span>
