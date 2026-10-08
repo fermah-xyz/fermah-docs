@@ -1,0 +1,63 @@
+---
+title: "The vault"
+---
+
+# The vault
+
+The prepaid ledger keeps the books while a treasury account holds the USDC. That is custody, as on a prepaid card: a buyer relies on the operator to pay a withdrawal, and the treasury's key can move what it holds. For mainnet, Fermah Pay on Stellar takes the next step. The **vault** is a Soroban contract that holds the buyers' USDC itself, so no key the operator or the admin holds can move a buyer's money except within a daily limit the buyer signed. A buyer can always leave without the operator.
+
+- **Running on testnet:** [`CBQHH62P6OLSC22FZLC73FW4QXURYCKE5H25MIKA76X3ZIJQLH65FJJW`](https://stellar.expert/explorer/testnet/contract/CBQHH62P6OLSC22FZLC73FW4QXURYCKE5H25MIKA76X3ZIJQLH65FJJW), against Circle's testnet USDC.
+- **Specification:** the [vault contract](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/architecture/vault-contract.md) and its [source](https://github.com/fermah-xyz/fermah-pay-stellar/tree/main/contracts/vault).
+
+---
+
+## Only the contract's code moves the USDC
+
+The USDC contract lets a contract address spend only when that contract is the caller, and the vault exposes no other way to authorise for it. Every payout is debited from the ledger in the same invocation as the transfer, so the vault always holds at least what it owes buyers and the seller. Anyone can check that from the network. The observer compares it continuously, and the testnet runs [record it](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/README.md#vault-on-testnet) after every flow.
+
+| | Prepaid ledger | Vault |
+|---|---|---|
+| Where the USDC is | a treasury account | the contract's own USDC balance |
+| Who can move it | the treasury key | only the contract's code |
+| Charge limits | per charge and per day, set by the admin | the same, plus a daily limit each buyer signs |
+| Leaving | buyer and treasury | buyer and operator at once, or the buyer alone after a notice |
+| Seller revenue | seller and treasury | seller alone |
+| New code | admin, at once | admin, after a week, within a three-day window |
+
+---
+
+## A limit the buyer signs
+
+With their first deposit, under the same signature, the buyer sets a daily spending limit for the seller. The contract refuses any charge past it, whatever the operator signs. Raising the limit takes effect at once. Lowering it takes effect after a notice of about 26 hours, which keeps every charge the seller already accepted payable. The gateway applies a lower limit to new charges the moment the buyer signs it.
+
+That suits agents and automated buyers especially well: a budget that holds on-chain, not only in the agent's own code.
+
+---
+
+## Leaving without the operator
+
+A cooperative withdrawal pays at once: the buyer signs, and the operator co-signs amounts the gateway has already set aside. When the operator does not cooperate, the buyer requests an **exit**, alone. Once the notice has passed, anyone may complete it, whether a wallet, a relayer or a friend. It pays the destination the buyer signed. A buyer with no XLM still gets out.
+
+The notice is what keeps the seller whole. Every charge accepted before the buyer acts settles, or expires, before the exit unlocks, so a buyer cannot consume a service and pull the money out from under it.
+
+Pausing the contract stops new deposits and charges. It never stops exits, withdrawals, limit changes, revocations or revenue payouts.
+
+---
+
+## New code on a timetable
+
+The admin, two of three keys, can propose new code. It installs only after about a week, longer than the exit notice, so a buyer who does not accept it can leave first. If it is not installed within three days after that, the proposal lapses. While a proposal is open, the gateway takes no new deposits or mandates, so nobody's money arrives under code they had no chance to leave. The observer keeps an alert raised for as long as the code may be installed.
+
+For the launch, admin-set limits bound how much each buyer, and all buyers together, may hold. They apply to recurring mandates too, so a buyer's exposure is bounded whether the money is deposited or approved.
+
+---
+
+## Kept current off-chain, checked on-chain
+
+The gateway answers charges in milliseconds, so it has to know a buyer's limit and any exit request even when the wallet set them through another app. The worker reads each buyer's account on the vault and then every event, page by page, with each page and its position committed together. Charges wait whenever that reading falls behind. The observer reports any limit or exit made outside the gateway, any upgrade proposal, and any gap between the vault's USDC and what it owes.
+
+On testnet:
+- [a seller's full flow](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-10-08T030108-vault-end-to-end.json) on the vault: a 0-XLM buyer deposits with a daily limit, a charge past it is refused, a withdrawal is co-signed by the operator, a lower limit applies at once, and an exit request holds its amount;
+- the alerts for [a limit changed outside the gateway](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-10-08T030453-drill-vault-limit.json) and [a proposed upgrade](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/testnet/2026-10-08T030534-drill-vault-upgrade.json), each raised in under a minute.
+
+The vault goes through an independent audit before it holds real funds on mainnet.
