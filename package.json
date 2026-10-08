@@ -9,7 +9,7 @@
     "preview": "bunx serve out",
     "deploy:dev": "wrangler deploy --env dev",
     "deploy:prod": "wrangler deploy --env production",
-    "lint": "next lint ."
+    "lint": "eslint ."
   },
   "dependencies": {
     "@iconify/react": "^6.0.2",

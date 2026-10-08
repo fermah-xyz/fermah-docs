@@ -46,7 +46,7 @@ This is a multi-product documentation site built with [Nextra 4](https://nextra.
 ### Prerequisites
 
 - [Bun](https://bun.sh) (latest)
-- Node.js 18+ (for compatibility)
+- Node.js 20.9+
 
 ### Install
 
