@@ -9,7 +9,7 @@ title: "Overview"
 Fermah Pay is billing infrastructure for services that charge per request: APIs, AI agents, proving networks, streams. A buyer funds a prepaid USDC balance with one signature, without ever holding XLM. The seller charges that balance as the buyer uses the service, and the charges settle on-chain in batches. Fermah Pay runs in production on an EVM-compatible chain, where it settles real USDC for Fermah's proof marketplace. On Stellar it is a Soroban contract and a set of open-source services that any seller can run.
 
 - **Code:** [github.com/fermah-xyz/fermah-pay-stellar](https://github.com/fermah-xyz/fermah-pay-stellar), Apache-2.0.
-- **Running on testnet:** the prepaid ledger contract [`CD3GESMYMJ3MNWNSKS6P7TEDHL5HYEWSGTFX7A3ENDB5MXTQ5TED7PSI`](https://stellar.expert/explorer/testnet/contract/CD3GESMYMJ3MNWNSKS6P7TEDHL5HYEWSGTFX7A3ENDB5MXTQ5TED7PSI), against Circle's testnet USDC.
+- **Running on testnet:** the prepaid ledger contract [`CD3GESMYMJ3MNWNSKS6P7TEDHL5HYEWSGTFX7A3ENDB5MXTQ5TED7PSI`](https://stellar.expert/explorer/testnet/contract/CD3GESMYMJ3MNWNSKS6P7TEDHL5HYEWSGTFX7A3ENDB5MXTQ5TED7PSI) and [the vault](/fermah-pay/the-vault) [`CBQHH62P6OLSC22FZLC73FW4QXURYCKE5H25MIKA76X3ZIJQLH65FJJW`](https://stellar.expert/explorer/testnet/contract/CBQHH62P6OLSC22FZLC73FW4QXURYCKE5H25MIKA76X3ZIJQLH65FJJW), against Circle's testnet USDC.
 - **Every claim checkable:** each testnet transaction behind this page is listed, with its hash, in the [evidence index](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/README.md).
 
 ---
@@ -28,7 +28,7 @@ Fermah Pay is billing infrastructure for services that charge per request: APIs,
                                                               reconciles treasury vs. contract vs. DB
 ```
 
-- **Prepaid ledger contract (Soroban).** One instance per seller. It records each buyer's credit and the seller's revenue. The USDC sits in a separate treasury account, so the contract never holds funds. Deposits and withdrawals move USDC and update the ledger in the same invocation. Charges settle in batches of up to 98, and every charge identifier is recorded so it can never debit twice. The same contract runs recurring mandates over SAC allowances.
+- **Prepaid ledger contract (Soroban).** One instance per seller. It records each buyer's credit and the seller's revenue. The USDC sits in a separate treasury account, so the contract never holds funds. Deposits and withdrawals move USDC and update the ledger in the same invocation. Charges settle in batches of up to 98, and every charge identifier is recorded so it can never debit twice. The same contract runs recurring mandates over SAC allowances. For mainnet, [the vault](/fermah-pay/the-vault) holds the USDC itself: buyers sign a daily limit and can always leave without the operator.
 - **Gateway.** The seller-facing API: gRPC, and an x402 facilitator interface over HTTP. It registers buyers, prepares the authorizations buyers sign, verifies what they return, and admits charges against the buyer's balance in milliseconds. It holds no signing key.
 - **Worker.** The only process that signs and sends transactions. It submits through fee bumps from an operator-funded account, records every envelope before sending it, and decides every outcome from the ledger itself.
 - **Observer.** A key-less process. It reads every contract event through `getEvents`, matches each against the gateway's records, and continuously reconciles the treasury's USDC, the contract's totals and the database, with alerts for each threat in the threat model.
@@ -95,6 +95,9 @@ Everything below runs on Stellar testnet against Circle's testnet USDC. Each ite
 - [Threat model](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/security/threat-model.md), [monitoring plan](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/monitoring-plan.md) with Prometheus alerts and a Grafana dashboard, and [drills](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/monitoring-drills.md) that provoke each threat on testnet and record the alert firing.
 - [Limits against untrusted buyers and sellers](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/limits.md) and [key management](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/keys.md) for operators.
 - The contract's code, upgraded in place with two of the admin's three keys, [hashes to the Wasm CI builds](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/README.md#deployed-contracts-testnet) from the public repository.
+
+**Toward mainnet: the vault**
+- [The vault](/fermah-pay/the-vault): the contract holds the buyers' USDC, each buyer signs a daily limit, and an exit needs no operator. New code waits a week and lapses after a three-day window. [Running on testnet](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/README.md#vault-on-testnet) through the same gateway, worker and observer, with its own alerts and drills.
 
 Next: a testnet integration with an ecosystem partner and a live 30-day mandate, then mainnet and the TypeScript SDK in Tranche 3. To run it yourself, the [testnet quickstart](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/quickstart/testnet.md) goes from a fresh clone to a deposit, charges and a withdrawal in minutes.
 

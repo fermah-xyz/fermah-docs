@@ -26,6 +26,9 @@ export default {
   'two-programs-on-the-blockchain': {
     title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:file-code-duotone" width={18} /> The contract on the blockchain</span>
   },
+  'the-vault': {
+    title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:vault-duotone" width={18} /> The vault</span>
+  },
   'what-the-system-cannot-do': {
     title: <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Icon icon="ph:lock-key-duotone" width={18} /> What the system cannot do</span>
   },
