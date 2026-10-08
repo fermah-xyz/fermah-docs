@@ -66,11 +66,12 @@ vault = "0x4C891A7090CC54a6e6E1bb808640eB1603919466"
 whitelist = "0x1DE8df315db89bF435A278cbA3518f26974d5e1c"
 
 [telemetry]
-mode = { Alloy = {} }
-layers = "logs,metrics,traces"
-filter = "info"
+mode = "Otlp"
+layers = "metrics,traces"
+level = "info"
+filters = []
 interval = 30
-temporality = { Cumulative = {} }
+temporality = "Cumulative"
 
 [telemetry.export]
 endpoint = "http://localhost:4317/"
