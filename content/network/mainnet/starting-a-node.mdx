@@ -55,10 +55,10 @@ After=network.target local-fs.target
 
 [Service]
 Type=simple
-User=%u
-Group=%g
+User=fermah
+Group=fermah
 Environment=DOCKER_HOST=unix:///run/user/1001/docker.sock
-ExecStart=/home/%u/.fermah/bin/fpn
+ExecStart=/home/fermah/.fermah/bin/fpn
 ExecStop=/bin/kill -s TERM $MAINPID
 Restart=on-failure
 KillMode=control-group
@@ -67,10 +67,9 @@ TimeoutStopSec=20
 StartLimitBurst=5
 RestartSec=5
 StandardOutput=append:/var/log/fermah/pn.log
-Environment=DOCKER_HOST=unix:///run/user/1001/docker.sock
 
 ExecStartPre=/bin/mkdir -p /var/log/fermah
-ExecStartPre=/bin/chown %u:%g /var/log/fermah
+ExecStartPre=/bin/chown fermah:fermah /var/log/fermah
 ExecStartPre=/bin/chmod 755 /var/log/fermah
 LimitNOFILE=65535
 
