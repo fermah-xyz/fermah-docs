@@ -95,8 +95,9 @@ Everything below runs on Stellar testnet against Circle's testnet USDC. Each ite
 - [Threat model](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/security/threat-model.md), [monitoring plan](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/monitoring-plan.md) with Prometheus alerts and a Grafana dashboard, and [drills](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/monitoring-drills.md) that provoke each threat on testnet and record the alert firing.
 - [Limits against untrusted buyers and sellers](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/limits.md) and [key management](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/self-hosting/keys.md) for operators.
 - The contract's code, upgraded in place with two of the admin's three keys, [hashes to the Wasm CI builds](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/evidence/README.md#deployed-contracts-testnet) from the public repository.
+- [Vellar](https://vellar.xyz), a Stellar x402 facilitator, [integrated on testnet](https://git.fermah.xyz/fermah-xyz/fermah-pay-stellar/-/blob/main/docs/evidence/README.md#partner-integration-on-testnet) through the hosted sandbox: a passkey smart wallet deposited, was charged through the Ledger API and through x402, and read its balance, and Vellar confirmed it in writing.
 
-Next: a testnet integration with an ecosystem partner and a live 30-day mandate, then mainnet and the TypeScript SDK in Tranche 3. To run it yourself, the [testnet quickstart](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/quickstart/testnet.md) goes from a fresh clone to a deposit, charges and a withdrawal in minutes.
+Next: the second month of a live 30-day mandate, then mainnet and the TypeScript SDK in Tranche 3. To run it yourself, the [testnet quickstart](https://github.com/fermah-xyz/fermah-pay-stellar/blob/main/docs/quickstart/testnet.md) goes from a fresh clone to a deposit, charges and a withdrawal in minutes.
 
 ---
 
